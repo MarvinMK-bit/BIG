@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+title: "BIG — Bitcoin Incentivized Grading"
+message: "If you use BIG or build on its design, please cite it as below."
+type: software
+authors:
+  - family-names: Maali
+    given-names: Marvin Kenneth
+    affiliation: "GradeScript UG"
+repository-code: "https://github.com/MarvinMK-bit/BIG"
+abstract: >-
+  An automated grading system for handwritten student scripts, designed
+  to require progressively less large language model inference over time.
+  Grading runs down two comparable paths — an LLM grader and a
+  deterministic, versioned mark scheme — writing results into a shared
+  per-question schema so the two can be measured against each other.
+  Contributors are rewarded in bitcoin over the Lightning Network for
+  feedback and for authoring mark schemes.
+keywords:
+  - automated grading
+  - assessment
+  - bitcoin
+  - lightning network
+  - deterministic grading
+  - education technology
+license: Apache-2.0
+date-released: "2026-09-13"
+version: "0.1.0"
