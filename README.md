@@ -97,5 +97,4 @@ grader marks wrongly is the input this whole system runs on. See
 
 ## Licence
 
-[Apache-2.0](LICENSE). Copyright 2026 Maali Marvin Kenneth; to be held by GradeScript UG on
-incorporation.
+[Apache-2.0](LICENSE). Copyright 2026 Maali Marvin Kenneth.
