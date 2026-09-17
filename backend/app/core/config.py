@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
+    STORAGE_BACKEND: str = "local"
+    STORAGE_LOCAL_ROOT: str = "./uploads"
+    FILE_RETENTION_DAYS: int = 90
+
 
 @lru_cache
 def get_settings() -> Settings:
