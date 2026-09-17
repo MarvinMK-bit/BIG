@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     STORAGE_BACKEND: str = "local"
     STORAGE_LOCAL_ROOT: str = "./uploads"
     FILE_RETENTION_DAYS: int = 90
+    MAX_UPLOAD_BYTES: int = 20 * 1024 * 1024
 
 
 @lru_cache

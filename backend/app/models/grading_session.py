@@ -33,6 +33,7 @@ class GradingSession(Base):
     original_filename: Mapped[str] = mapped_column(String, nullable=False)
     mime_type: Mapped[str] = mapped_column(String, nullable=False)
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_key: Mapped[str] = mapped_column(String, nullable=False)
     subject: Mapped[str | None] = mapped_column(String, nullable=True)
 
     status: Mapped[GradingStatus] = mapped_column(
