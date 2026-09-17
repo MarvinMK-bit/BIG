@@ -223,6 +223,62 @@ measurement machinery works — that a deterministic result can be compared to a
 on the same question and shown to be equal or better. That demonstration matters more than
 coverage.
 
+### 3.5 Data ownership and visibility
+
+BIG holds two very different kinds of data, and they are governed differently.
+
+**Student scripts are private.** Uploaded scripts, extracted answers, and per-question
+results belong to the school or teacher who submitted them and are visible only to that
+owner. This is not a configuration option. It is in accordance with data
+protection and privacy laws in most countries.
+
+**Mark schemes are public.** Schemes are the artifact the project exists to accumulate.
+They live in this repository, are reviewed through pull requests, and carry no student data
+— a scheme encodes how a question is marked, not who answered it. Public schemes can be
+shared, forked, and improved by anyone.
+
+**Aggregate measurements are public.** Accuracy by question type, cost per script, the
+convergence between the two grading paths — these are the evidence for or against the
+project's central claim, and publishing them is the point. They are derived from private
+scripts but contain none of their content.
+
+**Consequences for the data model:**
+
+- Ownership is recorded at the row level. A `QuestionResult` belongs to an owner, and
+  queries are scoped by that owner.
+- Mark schemes carry a visibility flag, defaulting to public.
+- Contributor attribution on a public scheme is opt-in. Some contributors will want credit
+  for work they were paid sats for; others will not.
+
+**On administrator access.** BIG is Apache-2.0, so anyone may run their own instance and
+will be administrator of it. Administrator credentials govern a deployment, not the
+codebase, and live in environment variables — never in this repository. On any given
+instance, administrators can read the data held there; deployments handling student work
+should say so plainly to their users.
+
+### 3.6 The assessment loop
+
+Grading is only half of assessment. A mark that never reaches the student changes nothing.
+
+BIG's loop is designed to close on paper:
+
+1. **Capture on mobile.** A teacher photographs scripts with the phone already in their
+   pocket. No scanner exists in most Ugandan schools, and none needs to.
+2. **Grade and review.** Results are reviewed on whichever device is to hand.
+3. **Print back onto the scripts.** The annotated output — including the Mask of Marks —
+   is printed and returned to students on their own paper.
+
+This splits the system across two surfaces with different requirements: capture is mobile,
+printing is desktop. The backend serves data rather than presentation so both are first-class,
+and the frontend is responsive from the start. Retrofitting a desktop-only interface for
+phones is expensive; designing for both from the beginning is not.
+
+**Printer performance is tracked as data.** Which printer models produce legible, correctly
+scaled annotated scripts — and which do not — is operational knowledge worth accumulating.
+It informs what schools should buy, and in time it is the evidence base for purpose-built
+hardware. iFLYTEK's dedicated grading device followed exactly this path: software first,
+then hardware shaped by what the software learned.
+
 ---
 
 ## 4. The incentive layer
