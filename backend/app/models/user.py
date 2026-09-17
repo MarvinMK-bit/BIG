@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
+    from app.models.grading_session import GradingSession
     from app.models.question_result import QuestionResult
 
 
@@ -32,4 +33,7 @@ class User(Base):
 
     question_results: Mapped[list["QuestionResult"]] = relationship(
         "QuestionResult", back_populates="owner"
+    )
+    grading_sessions: Mapped[list["GradingSession"]] = relationship(
+        "GradingSession", back_populates="owner"
     )
