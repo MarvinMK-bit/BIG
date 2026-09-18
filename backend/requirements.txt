@@ -13,3 +13,6 @@ bcrypt==5.0.0
 pyjwt==2.14.0
 python-multipart==0.0.32
 email-validator==2.3.0
+
+# Mark scheme loading
+pyyaml==6.0.3

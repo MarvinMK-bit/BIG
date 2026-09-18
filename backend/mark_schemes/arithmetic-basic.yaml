@@ -1,0 +1,22 @@
+name: arithmetic-basic
+version: 0.1.0
+subject: mathematics
+source: manual
+description: Integer arithmetic and simple linear equations.
+questions:
+  - number: "1"
+    max_mark: 1
+    matcher: numeric
+    answer: 56
+  - number: "2"
+    max_mark: 1
+    matcher: exact
+    answer: "8x"
+  - number: "3"
+    max_mark: 1
+    matcher: numeric
+    answer: 4
+  - number: "4"
+    max_mark: 1
+    matcher: numeric
+    answer: 9
