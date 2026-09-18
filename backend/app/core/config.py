@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     FILE_RETENTION_DAYS: int = 90
     MAX_UPLOAD_BYTES: int = 20 * 1024 * 1024
 
+    OCR_ENGINE: str = "stub"
+
 
 @lru_cache
 def get_settings() -> Settings:
