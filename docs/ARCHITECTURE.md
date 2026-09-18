@@ -279,6 +279,49 @@ It informs what schools should buy, and in time it is the evidence base for purp
 hardware. iFLYTEK's dedicated grading device followed exactly this path: software first,
 then hardware shaped by what the software learned.
 
+### 3.7 Mark schemes: format, generation, and transparency
+
+A mark scheme is the artifact this project exists to accumulate. Its format determines who
+can write one, so the format is a product decision, not an implementation detail.
+
+**Schemes are YAML files, versioned in this repository.** YAML is readable and writable by a
+teacher who does not program, diffs cleanly in a pull request, and — unlike a scheme
+expressed as code — cannot execute anything. That last property matters for a public project
+that accepts contributions from strangers.
+
+A scheme carries, at minimum: a name, a semantic version, the subject it covers, and a list
+of questions with their maximum marks and expected answers. Matching is declared rather than
+programmed — `exact`, `numeric`, and similar matcher names — so the vocabulary of what a
+scheme can express grows deliberately rather than by contributors writing arbitrary logic.
+
+**Schemes can be generated from marking guides.** Teachers already write marking guides for
+every set exam. Requiring them to re-express that work as YAML is a needless barrier, so BIG
+accepts a marking guide and produces a draft scheme from it.
+
+Guides are accepted as **DOCX only, never as photographs**. A marking guide is an authored
+document that already exists as text; photographing it introduces an OCR error class into
+material that never needed one. This is a deliberate asymmetry with student scripts, which
+must be photographed because no text version exists.
+
+**Generation is free.** BIG sells nothing. Running a model against your own marking guide
+costs what it costs, and users arrange that themselves. Sats flow outward from this project
+to contributors and never inward from users — charging for model assistance would mean BIG
+earned more when schemes stayed weak, which inverts the incentive the whole system rests on.
+
+**Generated schemes are drafts until reviewed.** A model reading a marking guide will
+misread some answers, and a wrong scheme applied to six hundred scripts is worse than no
+scheme. Generated schemes therefore enter review rather than service, and each scheme records
+its provenance — hand-written, generated from a guide, or derived from feedback — because
+those carry different levels of trust.
+
+**Both representations are visible.** A user can see the YAML and the form it compiles to
+before trusting a scheme with real scripts. This follows directly from section 2.4: the claim
+for deterministic grading is that you can read the rule and prove what it does. A scheme that
+cannot be inspected at both levels does not deliver that property.
+
+Improving a scheme — by hand, with a model, by any means the contributor chooses — is
+rewarded under section 4.2. The work is what earns sats, not the tooling used to do it.
+
 ---
 
 ## 4. The incentive layer
