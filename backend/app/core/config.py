@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     OCR_ENGINE: str = "stub"
 
+    MARK_SCHEMES_DIR: str = "./mark_schemes"
+
 
 @lru_cache
 def get_settings() -> Settings:
