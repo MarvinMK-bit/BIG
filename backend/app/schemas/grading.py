@@ -86,3 +86,13 @@ class GradingRunOut(BaseModel):
 class VerdictRequest(BaseModel):
     # Required but nullable: null clears a previous verdict
     is_correct: bool | None
+
+
+class GraderAccuracyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    grader_type: GraderType
+    mark_scheme_version: str | None
+    judged_questions: int
+    correct_decisions: int
+    accuracy: float | None

@@ -13,6 +13,7 @@ from app.models.user import User
 from app.repositories.grading_repo import GradingSessionRepository
 from app.repositories.result_repo import QuestionResultRepository
 from app.schemas.grading import (
+    GraderAccuracyOut,
     GradingRunOut,
     GradingSessionOut,
     QuestionResultOut,
@@ -21,8 +22,9 @@ from app.schemas.grading import (
     SchemeGradeResponse,
     VerdictRequest,
 )
-from app.services.auth_service import get_current_user
+from app.services.auth_service import get_current_admin, get_current_user
 from app.services.grading import grade_with_llm, grade_with_scheme, run_ocr
+from app.services.grading.accuracy import measure_accuracy
 from app.services.grading.comparison import RunNotFoundError, compare_runs
 from app.services.grading.schemes import load_all_schemes
 from app.services.storage import get_backend
@@ -249,3 +251,22 @@ async def set_verdict(
 
     await session.commit()
     return result
+
+
+@router.get("/accuracy", response_model=list[GraderAccuracyOut])
+async def get_accuracy(
+    subject: str | None = None,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> list[GraderAccuracyOut]:
+    accuracy = await measure_accuracy(session, owner_id=user.id, subject=subject)
+    return [GraderAccuracyOut.model_validate(a) for a in accuracy]
+
+
+@router.get("/accuracy/global", response_model=list[GraderAccuracyOut])
+async def get_global_accuracy(
+    admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_db),
+) -> list[GraderAccuracyOut]:
+    accuracy = await measure_accuracy(session)
+    return [GraderAccuracyOut.model_validate(a) for a in accuracy]
