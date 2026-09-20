@@ -47,3 +47,42 @@ class SchemeGradeRequest(BaseModel):
 class SchemeGradeResponse(BaseModel):
     grading_run_id: uuid.UUID
     results: list[QuestionResultOut]
+
+
+class QuestionComparisonOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    question_number: str
+    sub_part: str | None
+    extracted_answer: str | None
+    llm_mark: float | None
+    scheme_mark: float | None
+    max_mark: float | None
+    agree: bool | None
+    human_verdict: bool | None
+
+
+class RunComparisonOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    session_id: uuid.UUID
+    llm_run_id: uuid.UUID | None
+    scheme_run_id: uuid.UUID | None
+    scheme_version: str | None
+    questions: list[QuestionComparisonOut]
+    agreement_rate: float | None
+    llm_total: float | None
+    scheme_total: float | None
+    max_total: float | None
+
+
+class GradingRunOut(BaseModel):
+    grading_run_id: uuid.UUID
+    grader_type: GraderType
+    mark_scheme_version: str | None
+    created_at: datetime
+
+
+class VerdictRequest(BaseModel):
+    # Required but nullable: null clears a previous verdict
+    is_correct: bool | None

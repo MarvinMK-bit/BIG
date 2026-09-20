@@ -8,11 +8,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.grading_session import GradingSession, GradingStatus
+from app.models.question_result import QuestionResult
 from app.models.user import User
 from app.repositories.grading_repo import GradingSessionRepository
-from app.schemas.grading import GradingSessionOut, QuestionResultOut, SchemeGradeRequest, SchemeGradeResponse
+from app.repositories.result_repo import QuestionResultRepository
+from app.schemas.grading import (
+    GradingRunOut,
+    GradingSessionOut,
+    QuestionResultOut,
+    RunComparisonOut,
+    SchemeGradeRequest,
+    SchemeGradeResponse,
+    VerdictRequest,
+)
 from app.services.auth_service import get_current_user
 from app.services.grading import grade_with_llm, grade_with_scheme, run_ocr
+from app.services.grading.comparison import RunNotFoundError, compare_runs
 from app.services.grading.schemes import load_all_schemes
 from app.services.storage import get_backend
 
@@ -177,3 +188,64 @@ async def grade_llm(
         grading_run_id=grading_run_id,
         results=[QuestionResultOut.model_validate(r) for r in results],
     )
+
+
+@router.get("/sessions/{session_id}/comparison", response_model=RunComparisonOut)
+async def get_comparison(
+    session_id: UUID,
+    llm_run_id: UUID | None = None,
+    scheme_run_id: UUID | None = None,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> RunComparisonOut:
+    grading_session = await GradingSessionRepository(session).get_for_owner(session_id, user.id)
+    if grading_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grading session not found")
+
+    try:
+        comparison = await compare_runs(
+            session_id, user.id, session, llm_run_id=llm_run_id, scheme_run_id=scheme_run_id
+        )
+    except RunNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return RunComparisonOut.model_validate(comparison)
+
+
+@router.get("/sessions/{session_id}/runs", response_model=list[GradingRunOut])
+async def list_runs(
+    session_id: UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> list[GradingRunOut]:
+    grading_session = await GradingSessionRepository(session).get_for_owner(session_id, user.id)
+    if grading_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grading session not found")
+
+    runs = await QuestionResultRepository(session).list_runs_for_session(session_id, user.id)
+    return [
+        GradingRunOut(
+            grading_run_id=run_id,
+            grader_type=grader_type,
+            mark_scheme_version=scheme_version,
+            created_at=created_at,
+        )
+        for run_id, grader_type, scheme_version, created_at in runs
+    ]
+
+
+@router.patch("/results/{result_id}/verdict", response_model=QuestionResultOut)
+async def set_verdict(
+    result_id: UUID,
+    body: VerdictRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> QuestionResult:
+    result = await QuestionResultRepository(session).set_human_verdict(
+        result_id, user.id, body.is_correct
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result not found")
+
+    await session.commit()
+    return result
