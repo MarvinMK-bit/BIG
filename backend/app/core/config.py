@@ -22,6 +22,9 @@ class Settings(BaseSettings):
 
     MARK_SCHEMES_DIR: str = "./mark_schemes"
 
+    ANTHROPIC_API_KEY: str | None = None
+    LLM_GRADER_MODEL: str = "claude-sonnet-4-5"
+
 
 @lru_cache
 def get_settings() -> Settings:

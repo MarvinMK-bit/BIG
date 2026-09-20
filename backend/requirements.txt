@@ -16,3 +16,6 @@ email-validator==2.3.0
 
 # Mark scheme loading
 pyyaml==6.0.3
+
+# LLM grading
+anthropic==1.7.0

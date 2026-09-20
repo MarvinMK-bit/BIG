@@ -12,7 +12,7 @@ from app.models.user import User
 from app.repositories.grading_repo import GradingSessionRepository
 from app.schemas.grading import GradingSessionOut, QuestionResultOut, SchemeGradeRequest, SchemeGradeResponse
 from app.services.auth_service import get_current_user
-from app.services.grading import grade_with_scheme, run_ocr
+from app.services.grading import grade_with_llm, grade_with_scheme, run_ocr
 from app.services.grading.schemes import load_all_schemes
 from app.services.storage import get_backend
 
@@ -137,6 +137,40 @@ async def grade_scheme(
 
     grading_run_id = uuid.uuid4()
     results = await grade_with_scheme(grading_session, scheme, session, grading_run_id)
+    await session.commit()
+
+    return SchemeGradeResponse(
+        grading_run_id=grading_run_id,
+        results=[QuestionResultOut.model_validate(r) for r in results],
+    )
+
+
+@router.post("/sessions/{session_id}/grade/llm", response_model=SchemeGradeResponse)
+async def grade_llm(
+    session_id: UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> SchemeGradeResponse:
+    repo = GradingSessionRepository(session)
+    grading_session = await repo.get_for_owner(session_id, user.id)
+
+    if grading_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grading session not found")
+
+    if grading_session.status != GradingStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Grading session is {grading_session.status.value}; OCR must be completed before grading",
+        )
+
+    if not get_settings().ANTHROPIC_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="LLM grading is unavailable: ANTHROPIC_API_KEY is not configured on the server",
+        )
+
+    grading_run_id = uuid.uuid4()
+    results = await grade_with_llm(grading_session, session, grading_run_id)
     await session.commit()
 
     return SchemeGradeResponse(
