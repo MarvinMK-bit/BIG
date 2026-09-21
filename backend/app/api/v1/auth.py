@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User
@@ -12,8 +13,22 @@ from app.services.auth_service import get_current_user
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+@router.get("/config")
+async def auth_config() -> dict[str, bool]:
+    return {"registration_open": get_settings().ALLOW_REGISTRATION}
+
+
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 async def register(payload: UserCreate, session: AsyncSession = Depends(get_db)) -> Token:
+    if not get_settings().ALLOW_REGISTRATION:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Registration is closed on this instance. BIG is open source — "
+                "see the repository to run your own."
+            ),
+        )
+
     repo = UserRepository(session)
 
     if await repo.get_by_username(payload.username) is not None:
