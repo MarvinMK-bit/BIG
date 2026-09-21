@@ -40,6 +40,27 @@ export function splitScript(markdown: string): ScriptBlock[] {
     .filter((b) => b.text !== "");
 }
 
+// First result per question wins, as in the backend.
+export function indexResults(results: QuestionResult[]): Map<string, QuestionResult> {
+  const byKey = new Map<string, QuestionResult>();
+  for (const r of results) {
+    const key = questionKey(r.question_number, r.sub_part);
+    if (!byKey.has(key)) byKey.set(key, r);
+  }
+  return byKey;
+}
+
+// First block per question wins, as in the backend.
+export function indexBlocks(blocks: ScriptBlock[]): Map<string, ScriptBlock> {
+  const byKey = new Map<string, ScriptBlock>();
+  for (const b of blocks) {
+    if (b.number === null) continue;
+    const key = questionKey(b.number, b.subPart);
+    if (!byKey.has(key)) byKey.set(key, b);
+  }
+  return byKey;
+}
+
 export type AnnotatedItem = {
   kind: "preamble" | "question" | "unmatched";
   label: string | null;
@@ -47,7 +68,7 @@ export type AnnotatedItem = {
   result: QuestionResult | null;
 };
 
-function label(number: string, subPart: string | null): string {
+export function questionLabel(number: string, subPart: string | null): string {
   const sub = subPart?.trim().replace(/^[()]+|[()]+$/g, "");
   return `Q${number.trim()}${sub ? `(${sub})` : ""}`;
 }
@@ -56,11 +77,7 @@ function label(number: string, subPart: string | null): string {
 // the first block for a repeated question wins. Results with no block are appended so the
 // totals always agree with the run.
 export function annotate(blocks: ScriptBlock[], results: QuestionResult[]): AnnotatedItem[] {
-  const byKey = new Map<string, QuestionResult>();
-  for (const r of results) {
-    const key = questionKey(r.question_number, r.sub_part);
-    if (!byKey.has(key)) byKey.set(key, r);
-  }
+  const byKey = indexResults(results);
 
   const matched = new Set<QuestionResult>();
   const items: AnnotatedItem[] = blocks.map((block) => {
@@ -72,7 +89,7 @@ export function annotate(blocks: ScriptBlock[], results: QuestionResult[]): Anno
     if (result && first) matched.add(result);
     return {
       kind: "question",
-      label: label(block.number, block.subPart),
+      label: questionLabel(block.number, block.subPart),
       text: block.text,
       result: first ? result : null,
     };
@@ -82,7 +99,7 @@ export function annotate(blocks: ScriptBlock[], results: QuestionResult[]): Anno
     if (!matched.has(r)) {
       items.push({
         kind: "unmatched",
-        label: label(r.question_number, r.sub_part),
+        label: questionLabel(r.question_number, r.sub_part),
         text: null,
         result: r,
       });

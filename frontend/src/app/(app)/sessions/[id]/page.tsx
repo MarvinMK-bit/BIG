@@ -3,8 +3,16 @@ import { LocalTime } from "@/components/local-time";
 import { StatusBadge } from "@/components/status-badge";
 import { backendGet } from "@/lib/backend";
 import { splitScript } from "@/lib/script";
-import type { GradingRun, GradingSession, QuestionResult, RunView, Scheme } from "@/lib/types";
+import type {
+  GradingRun,
+  GradingSession,
+  QuestionResult,
+  RunComparison,
+  RunView,
+  Scheme,
+} from "@/lib/types";
 import { ExtractButton } from "./extract-button";
+import { ComparisonView } from "./comparison-view";
 import { GradePanel } from "./grade-panel";
 
 // Newest run for one grader path, with its results, so results survive a page refresh.
@@ -37,6 +45,14 @@ export default async function SessionPage(props: PageProps<"/sessions/[id]">) {
     latestRun(newestFirst, "llm", sid),
   ]);
   const blocks = splitScript(session.ocr_markdown ?? "");
+
+  // Pin the comparison to exactly the runs shown above so the two views can't drift apart.
+  const comparison =
+    schemeRun && llmRun
+      ? await backendGet<RunComparison>(
+          `/grading/sessions/${sid}/comparison?llm_run_id=${llmRun.run.grading_run_id}&scheme_run_id=${schemeRun.run.grading_run_id}`,
+        )
+      : null;
 
   return (
     <main className="flex flex-col gap-6">
@@ -84,6 +100,18 @@ export default async function SessionPage(props: PageProps<"/sessions/[id]">) {
         schemeRun={schemeRun}
         llmRun={llmRun}
       />
+
+      {comparison && schemeRun && llmRun && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold">Compare</h2>
+          <ComparisonView
+            comparison={comparison}
+            blocks={blocks}
+            schemeResults={schemeRun.results}
+            llmResults={llmRun.results}
+          />
+        </section>
+      )}
     </main>
   );
 }

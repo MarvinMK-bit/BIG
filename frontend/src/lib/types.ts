@@ -47,3 +47,34 @@ export type GradingRun = {
 
 // A stored run together with its per-question results.
 export type RunView = { run: GradingRun; results: QuestionResult[] };
+
+export type QuestionComparison = {
+  question_number: string;
+  sub_part: string | null;
+  extracted_answer: string | null;
+  llm_mark: number | null;
+  scheme_mark: number | null;
+  max_mark: number | null;
+  agree: boolean | null;
+  human_verdict: boolean | null;
+};
+
+export type RunComparison = {
+  session_id: string;
+  llm_run_id: string | null;
+  scheme_run_id: string | null;
+  scheme_version: string | null;
+  questions: QuestionComparison[];
+  agreement_rate: number | null;
+  llm_total: number | null;
+  scheme_total: number | null;
+  max_total: number | null;
+};
+
+export type GraderAccuracy = {
+  grader_type: "llm" | "mark_scheme";
+  mark_scheme_version: string | null;
+  judged_questions: number;
+  correct_decisions: number;
+  accuracy: number | null;
+};
