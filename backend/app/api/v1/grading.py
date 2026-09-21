@@ -20,9 +20,11 @@ from app.schemas.grading import (
     RunComparisonOut,
     SchemeGradeRequest,
     SchemeGradeResponse,
+    SchemeOut,
     VerdictRequest,
 )
 from app.services.auth_service import get_current_admin, get_current_user
+from app.services.file_type import detect_mime_type
 from app.services.grading import grade_with_llm, grade_with_scheme, run_ocr
 from app.services.grading.accuracy import measure_accuracy
 from app.services.grading.comparison import RunNotFoundError, compare_runs
@@ -31,7 +33,9 @@ from app.services.storage import get_backend
 
 router = APIRouter(prefix="/grading", tags=["grading"])
 
-ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
+UNSUPPORTED_FILE_MESSAGE = (
+    "This file isn't a photo or PDF of a script. Please upload a JPEG, PNG, WebP or PDF."
+)
 
 
 @router.post("/upload", response_model=GradingSessionOut, status_code=status.HTTP_201_CREATED)
@@ -41,14 +45,15 @@ async def upload(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> GradingSession:
-    if file.content_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported file type {file.content_type!r}",
-        )
-
     settings = get_settings()
     file_bytes = await file.read()
+
+    # The client-declared content type is untrusted; identify the file from its own bytes.
+    mime_type = detect_mime_type(file_bytes)
+    if mime_type is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=UNSUPPORTED_FILE_MESSAGE
+        )
 
     if len(file_bytes) > settings.MAX_UPLOAD_BYTES:
         raise HTTPException(
@@ -58,14 +63,14 @@ async def upload(
 
     backend = get_backend(settings.STORAGE_BACKEND)
     stored = await backend.save(
-        file_bytes, filename=file.filename or "upload", mime_type=file.content_type
+        file_bytes, filename=file.filename or "upload", mime_type=mime_type
     )
 
     repo = GradingSessionRepository(session)
     grading_session = await repo.create(
         owner_id=user.id,
         original_filename=file.filename or "upload",
-        mime_type=file.content_type,
+        mime_type=mime_type,
         file_size_bytes=stored.size_bytes,
         storage_key=stored.key,
         subject=subject,
@@ -119,6 +124,21 @@ async def extract(
 
     storage = get_backend(get_settings().STORAGE_BACKEND)
     return await run_ocr(session_id, session, storage)
+
+
+@router.get("/schemes", response_model=list[SchemeOut])
+async def list_schemes(user: User = Depends(get_current_user)) -> list[SchemeOut]:
+    schemes = load_all_schemes(Path(get_settings().MARK_SCHEMES_DIR))
+    return [
+        SchemeOut(
+            scheme_version=scheme.scheme_version,
+            name=scheme.name,
+            subject=scheme.subject,
+            description=scheme.description,
+            question_count=len(scheme.questions),
+        )
+        for scheme in schemes.values()
+    ]
 
 
 @router.post("/sessions/{session_id}/grade/scheme", response_model=SchemeGradeResponse)
@@ -234,6 +254,25 @@ async def list_runs(
         )
         for run_id, grader_type, scheme_version, created_at in runs
     ]
+
+
+@router.get("/sessions/{session_id}/runs/{run_id}/results", response_model=list[QuestionResultOut])
+async def get_run_results(
+    session_id: UUID,
+    run_id: UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> list[QuestionResult]:
+    grading_session = await GradingSessionRepository(session).get_for_owner(session_id, user.id)
+    if grading_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grading session not found")
+
+    rows = await QuestionResultRepository(session).list_for_run(run_id, user.id)
+    results = [r for r in rows if r.session_id == session_id]
+    if not results:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grading run not found")
+
+    return results
 
 
 @router.patch("/results/{result_id}/verdict", response_model=QuestionResultOut)

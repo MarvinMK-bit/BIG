@@ -18,6 +18,7 @@ class GradingSessionOut(BaseModel):
     status: GradingStatus
     ocr_engine: str | None
     ocr_confidence: float | None
+    ocr_markdown: str | None
     error_message: str | None
     created_at: datetime
     completed_at: datetime | None
@@ -38,6 +39,14 @@ class QuestionResultOut(BaseModel):
     ocr_confidence: float | None
     reasoning: str | None
     created_at: datetime
+
+
+class SchemeOut(BaseModel):
+    scheme_version: str
+    name: str
+    subject: str
+    description: str | None
+    question_count: int
 
 
 class SchemeGradeRequest(BaseModel):

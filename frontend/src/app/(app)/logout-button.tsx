@@ -12,7 +12,7 @@ export function LogoutButton() {
   }
 
   return (
-    <button onClick={logout} className="rounded border border-zinc-400 px-3 py-2 text-sm">
+    <button onClick={logout} className="min-h-9 rounded border border-zinc-400 px-3 text-sm">
       Log out
     </button>
   );

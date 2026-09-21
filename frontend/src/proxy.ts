@@ -21,5 +21,7 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   // Skip Next internals and static files in /public (anything with a file extension).
-  matcher: ["/((?!_next/static|_next/image|favicon\\.ico|.*\\.[^/]+$).*)"],
+  // Also skip the upload endpoint: proxy buffers request bodies and silently truncates them past
+  // 10MB, which would corrupt uploads (backend allows 20MB). The backend still requires auth there.
+  matcher: ["/((?!_next/static|_next/image|favicon\\.ico|api/grading/upload$|.*\\.[^/]+$).*)"],
 };
