@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     MAX_UPLOAD_BYTES: int = 20 * 1024 * 1024
 
     OCR_ENGINE: str = "stub"
+    OCR_MODEL: str = "claude-sonnet-4-5"
 
     MARK_SCHEMES_DIR: str = "./mark_schemes"
 
