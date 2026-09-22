@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/big-logo.png" alt="BIG — Bitcoin Incentivized Grading logo" width="420">
+</p>
+
 # BIG — Bitcoin Incentivized Grading
 
 ### *Mark like a Chess Engine*
