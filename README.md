@@ -1,5 +1,7 @@
 # BIG — Bitcoin Incentivized Grading
 
+### *Mark like a Chess Engine*
+
 **An automated grading system designed to need less AI over time, not more.**
 
 ---
