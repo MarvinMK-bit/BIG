@@ -1,0 +1,39 @@
+name: Keep Render services awake
+
+# Render's free web services sleep after 15 minutes without traffic, and the next visitor waits
+# through a cold start. Pinging every 14 minutes keeps them awake.
+#
+# Free instance hours are capped at 750 per workspace per month, shared by every free service.
+# Two services awake around the clock would need about 1,488 hours (2 x 24 x 31) and hit the cap
+# mid-month, after which both are suspended until the month ends. So pings only run during
+# working hours, 05:00-15:00 UTC (08:00-18:00 East Africa Time). That's about 2 x 10.25 x 31 =
+# ~635 hours, leaving headroom for use outside the window. Outside it the services sleep and
+# wake on demand.
+#
+# GitHub may start scheduled runs several minutes late, so an occasional cold start inside the
+# window is still possible.
+
+on:
+  schedule:
+    # Minutes 0, 14, 28, 42 and 56 of each hour from 05:00 to 14:56 UTC
+    - cron: "*/14 5-14 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping backend health check
+        env:
+          URL: ${{ vars.BACKEND_HEALTH_URL }}
+        # --max-time allows for a cold start, which can take up to a minute on the free tier
+        run: curl --fail --silent --show-error --max-time 120 --output /dev/null "$URL"
+
+      - name: Ping frontend
+        if: ${{ !cancelled() }}
+        env:
+          URL: ${{ vars.FRONTEND_URL }}
+        run: curl --fail --silent --show-error --max-time 120 --output /dev/null "$URL"

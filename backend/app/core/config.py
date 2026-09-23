@@ -1,6 +1,9 @@
+import json
 from functools import lru_cache
+from typing import Annotated, Any
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -8,7 +11,8 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
     DEBUG: bool = False
-    ALLOWED_ORIGINS: list[str] = []
+    # Exact origins only. Accepts a JSON list or a comma-separated string.
+    ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = []
 
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
@@ -27,6 +31,19 @@ class Settings(BaseSettings):
 
     ANTHROPIC_API_KEY: str | None = None
     LLM_GRADER_MODEL: str = "claude-sonnet-4-5"
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def _parse_origins(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            text = value.strip()
+            value = json.loads(text) if text.startswith("[") else text.split(",")
+        if isinstance(value, list):
+            value = [str(origin).strip().rstrip("/") for origin in value if str(origin).strip()]
+            # Credentials are allowed, so a wildcard would let any site make authenticated calls
+            if "*" in value:
+                raise ValueError("ALLOWED_ORIGINS must list exact origins; '*' is not allowed")
+        return value
 
 
 @lru_cache

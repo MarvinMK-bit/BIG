@@ -1,0 +1,52 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Secrets are never committed. Entries marked `sync: false` are prompted for in the Render
+# dashboard when the Blueprint is first applied. See docs/DEPLOYMENT.md.
+
+services:
+  - type: web
+    name: big-backend
+    runtime: python
+    region: frankfurt
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # Answers without touching the database, so health checks and keep-alive pings don't wake it
+    healthCheckPath: /health
+    envVars:
+      # requirements.txt is pinned for Python 3.12
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: ALLOW_REGISTRATION
+        value: "false"
+      - key: DEBUG
+        value: "false"
+      - key: OCR_ENGINE
+        value: claude
+      # Free instances have no persistent disk: uploads are lost on every restart or deploy
+      - key: STORAGE_LOCAL_ROOT
+        value: /tmp/uploads
+
+  - type: web
+    name: big-frontend
+    runtime: node
+    region: frankfurt
+    plan: free
+    rootDir: frontend
+    # --include=dev: with NODE_ENV=production, npm ci would otherwise skip devDependencies
+    # (TypeScript, Tailwind), which `next build` needs.
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    envVars:
+      - key: BACKEND_URL
+        sync: false
+      - key: NODE_ENV
+        value: production
