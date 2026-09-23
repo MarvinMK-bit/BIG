@@ -108,6 +108,42 @@ is not. You can read the rule. You can test it against past scripts. You can pro
 does. That property — not accuracy per se — is what makes the incentive layer possible,
 because you cannot pay people to improve something you cannot measure.
 
+### 2.5 Schemes replace models, and also improve them
+
+The argument so far has been subtractive: as schemes accumulate, the model is needed less.
+That is the cost case, and it is the one that pays for itself.
+
+But a mark scheme is not only a substitute for a model. It is a piece of explicit,
+portable, auditable domain knowledge — a teacher's judgement about what earns a mark,
+written down in a form a machine can execute and a human can check. Knowledge in that form
+has a second use: it can be given *to* a model.
+
+This is what the evidence in section 2.2 already shows, read the other way round. An
+elaborated rubric raised GPT-3.5 by 71% and did nothing for GPT-4. The rubric did not
+replace the weak model; it made the weak model competent. BIG's schemes are rubrics of
+exactly that kind, only machine-executable and version-controlled.
+
+So the same artifact does two jobs:
+
+- **Executed directly**, a scheme grades at zero marginal cost and perfect consistency.
+- **Supplied to a model**, a scheme lifts a cheap model toward the performance of an
+  expensive one, on the specific questions it covers.
+
+That suggests a loop rather than a one-way migration. Human feedback improves schemes;
+better schemes grade more questions deterministically; the schemes that remain hardest to
+make deterministic are also the ones most worth handing to a model as guidance; and the
+model's failures on those questions tell contributors where the next scheme is needed.
+
+The unit of accumulated knowledge is small, inspectable and independently valuable —
+closer to a corpus of many small verifiable artifacts than to one large opaque model. That
+property is what makes the incentive layer coherent: you can pay for a scheme because you
+can see it, test it, and point at what it improved.
+
+**This is a hypothesis, not a result.** BIG currently runs the LLM path with no scheme
+supplied, which measures the model at its weakest. Testing scheme-assisted grading against
+both unassisted grading and pure deterministic grading is future work, and it is the
+measurement that would establish whether this loop is real.
+
 ---
 
 ## 3. Architecture
