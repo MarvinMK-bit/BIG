@@ -16,12 +16,26 @@ export type GradingSession = {
 };
 
 export type Scheme = {
+  // "name@version"
   scheme_version: string;
   name: string;
-  subject: string;
+  subject: string | null;
   description: string | null;
   question_count: number;
+  origin: "repo" | "uploaded";
+  // Set for uploaded schemes only
+  owner_username: string | null;
 };
+
+// The version half of "name@version"; names may contain "@", so split at the last one.
+export function schemeVersionPart(scheme: Scheme): string {
+  const at = scheme.scheme_version.lastIndexOf("@");
+  return at === -1 ? scheme.scheme_version : scheme.scheme_version.slice(at + 1);
+}
+
+export function schemeOriginLabel(scheme: Scheme): string {
+  return scheme.origin === "repo" ? "repo" : `uploaded by ${scheme.owner_username ?? "unknown"}`;
+}
 
 export type QuestionResult = {
   id: string;

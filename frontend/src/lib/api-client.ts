@@ -1,6 +1,6 @@
 // Browser-side helpers for calling the /api proxy.
 
-type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
+type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string; status?: number };
 
 // FastAPI `detail` is a string for most errors and a list of {msg} for 422 validation errors.
 function detailMessage(body: unknown, status: number): string {
@@ -21,8 +21,9 @@ export async function apiRequest<T>(url: string, init: RequestInit): Promise<Api
   } catch {
     return { ok: false, error: "Could not reach the server" };
   }
+  // 204 No Content has no body; json() rejects and we fall back to null.
   const body = await res.json().catch(() => null);
-  if (!res.ok) return { ok: false, error: detailMessage(body, res.status) };
+  if (!res.ok) return { ok: false, error: detailMessage(body, res.status), status: res.status };
   return { ok: true, data: body as T };
 }
 

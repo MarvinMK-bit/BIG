@@ -11,6 +11,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.grading_session import GradingSession
     from app.models.mark_scheme import MarkSchemeRecord
+    from app.models.marking_guide import MarkingGuide
     from app.models.question_result import QuestionResult
 
 
@@ -40,4 +41,7 @@ class User(Base):
     )
     mark_schemes: Mapped[list["MarkSchemeRecord"]] = relationship(
         "MarkSchemeRecord", back_populates="owner"
+    )
+    marking_guides: Mapped[list["MarkingGuide"]] = relationship(
+        "MarkingGuide", back_populates="owner"
     )
