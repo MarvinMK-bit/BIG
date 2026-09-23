@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.grading_session import GradingSession
 from app.models.question_result import GraderType, QuestionResult
 from app.services.grading.matchers import MATCHERS
-from app.services.grading.parser import ParsedAnswer, parse_answers
+from app.services.grading.errors import NoQuestionMarkersError
+from app.services.grading.parser import (
+    ParsedAnswer,
+    has_question_markers,
+    parse_answers,
+    parse_lines_as_questions,
+)
 from app.services.grading.schemes import MarkScheme, SchemeQuestion
 
 _QuestionKey = tuple[str, str | None]
@@ -57,12 +63,20 @@ async def grade_with_scheme(
     scheme: MarkScheme,
     db: AsyncSession,
     grading_run_id: UUID,
+    unnumbered_mode: bool = False,
 ) -> list[QuestionResult]:
     if session.ocr_markdown is None:
         raise ValueError(f"Grading session {session.id} has no OCR text to grade")
 
+    if has_question_markers(session.ocr_markdown):
+        answers = parse_answers(session.ocr_markdown)
+    elif unnumbered_mode:
+        answers = parse_lines_as_questions(session.ocr_markdown)
+    else:
+        raise NoQuestionMarkersError()
+
     parsed_by_key: dict[_QuestionKey, ParsedAnswer] = {}
-    for parsed in parse_answers(session.ocr_markdown):
+    for parsed in answers:
         # If the student's paper repeats a question number, the first occurrence wins
         parsed_by_key.setdefault(_key(parsed.number, parsed.sub_part), parsed)
 

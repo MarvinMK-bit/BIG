@@ -51,6 +51,7 @@ class SchemeOut(BaseModel):
 
 class SchemeGradeRequest(BaseModel):
     scheme_version: str
+    unnumbered_mode: bool = False
 
 
 class SchemeGradeResponse(BaseModel):

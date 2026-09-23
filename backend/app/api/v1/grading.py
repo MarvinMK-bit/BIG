@@ -25,7 +25,12 @@ from app.schemas.grading import (
 )
 from app.services.auth_service import get_current_admin, get_current_user
 from app.services.file_type import detect_mime_type
-from app.services.grading import grade_with_llm, grade_with_scheme, run_ocr
+from app.services.grading import (
+    NoQuestionMarkersError,
+    grade_with_llm,
+    grade_with_scheme,
+    run_ocr,
+)
 from app.services.grading.accuracy import measure_accuracy
 from app.services.grading.comparison import RunNotFoundError, compare_runs
 from app.services.grading.schemes import load_all_schemes
@@ -169,7 +174,12 @@ async def grade_scheme(
         )
 
     grading_run_id = uuid.uuid4()
-    results = await grade_with_scheme(grading_session, scheme, session, grading_run_id)
+    try:
+        results = await grade_with_scheme(
+            grading_session, scheme, session, grading_run_id, unnumbered_mode=body.unnumbered_mode
+        )
+    except NoQuestionMarkersError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     await session.commit()
 
     return SchemeGradeResponse(
