@@ -1,8 +1,30 @@
 import type { QuestionResult } from "./types";
 
-// Same question-start convention as the backend parser (backend/app/services/grading/parser.py):
-// "1." / "1)" / "3(a)" / "3(a)." / "3a." / "3a)", followed by whitespace or end of line.
-const QUESTION_RE = /^\s*(\d+)(?:\(([A-Za-z]{1,4})\)[.)]?|([A-Za-z])[.)]|[.)])(?=\s|$)/;
+// Same question markers as the backend parser (backend/app/services/grading/parser.py) — keep the
+// two in step. A marker is a line holding nothing but the marker:
+//   "1." / "1)" / "(1)" / "Item 1"
+//   "3(a)" / "3(a)(ii)" / "3a", each optionally followed by "." or ")"
+const QUESTION_RE = new RegExp(
+  [
+    String.raw`^\s*(?:`,
+    String.raw`\((?<parenNumber>\d+)\)`,
+    String.raw`|(?:item\s+)?(?<number>\d+)(?:`,
+    String.raw`\((?<sub>[a-z]{1,4})\)(?:\((?<nestedSub>[a-z]{1,4})\))?[.)]?`,
+    String.raw`|(?<bareSub>[a-z])[.)]?`,
+    String.raw`|[.)])`,
+    String.raw`|item\s+(?<itemNumber>\d+)[.:]?`,
+    String.raw`)\s*$`,
+  ].join(""),
+  "i",
+);
+
+function matchMarker(line: string): { number: string; subPart: string | null } | null {
+  const g = QUESTION_RE.exec(line)?.groups;
+  if (!g) return null;
+  const number = g.parenNumber ?? g.number ?? g.itemNumber;
+  if (g.sub && g.nestedSub) return { number, subPart: `${g.sub}(${g.nestedSub})` };
+  return { number, subPart: g.sub ?? g.bareSub ?? null };
+}
 const PAGE_SEPARATOR_RE = /^\s*-{3,}\s*$/;
 
 export type ScriptBlock = { number: string | null; subPart: string | null; text: string };
@@ -22,9 +44,9 @@ export function splitScript(markdown: string): ScriptBlock[] {
   for (const line of markdown.split(/\r?\n/)) {
     if (PAGE_SEPARATOR_RE.test(line)) continue;
 
-    const match = QUESTION_RE.exec(line);
-    if (match) {
-      current = { number: match[1], subPart: match[2] ?? match[3] ?? null, lines: [line] };
+    const marker = matchMarker(line);
+    if (marker) {
+      current = { ...marker, lines: [line] };
       groups.push(current);
       continue;
     }

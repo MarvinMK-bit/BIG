@@ -22,7 +22,8 @@ _MARKER_RE = re.compile(
     """,
     re.VERBOSE | re.IGNORECASE,
 )
-_ANSWER_RE = re.compile(r"^\s*answer\s*:", re.IGNORECASE)
+_ANSWER_RE = re.compile(r"^\s*answer\s*[:=]", re.IGNORECASE)
+_LEADING_EQUALS_RE = re.compile(r"^=\s*")
 _PAGE_SEPARATOR_RE = re.compile(r"^\s*-{3,}\s*$")
 
 
@@ -48,15 +49,22 @@ def _content_lines(markdown: str) -> list[str]:
     return [line for line in markdown.splitlines() if not _PAGE_SEPARATOR_RE.match(line)]
 
 
+def _strip_leading_equals(text: str) -> str:
+    return _LEADING_EQUALS_RE.sub("", text.strip())
+
+
 def _answer_from_block(lines: list[str]) -> str:
-    """The text after the first "Answer:" line, else the block's last non-empty line."""
+    """The text after the first "Answer:" / "Answer =" line, else the block's last non-empty line.
+
+    A leading "=" is dropped, so a final working line "= 42" yields "42".
+    """
     for line in lines:
         answer = _ANSWER_RE.match(line)
         if answer:
-            return line[answer.end() :].strip()
+            return _strip_leading_equals(line[answer.end() :])
     for line in reversed(lines):
         if line.strip():
-            return line.strip()
+            return _strip_leading_equals(line)
     return ""
 
 

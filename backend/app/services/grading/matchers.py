@@ -15,8 +15,13 @@ def _normalise(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
+def _strip_leading_equals(text: str) -> str:
+    text = text.strip()
+    return text[1:] if text.startswith("=") else text
+
+
 def match_exact(expected: str, actual: str) -> bool:
-    return _normalise(expected) == _normalise(actual)
+    return _normalise(_strip_leading_equals(expected)) == _normalise(_strip_leading_equals(actual))
 
 
 def match_numeric(expected: Decimal, actual: str) -> bool:
