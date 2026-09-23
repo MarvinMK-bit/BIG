@@ -10,6 +10,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.grading_session import GradingSession
+    from app.models.mark_scheme import MarkSchemeRecord
     from app.models.question_result import QuestionResult
 
 
@@ -36,4 +37,7 @@ class User(Base):
     )
     grading_sessions: Mapped[list["GradingSession"]] = relationship(
         "GradingSession", back_populates="owner"
+    )
+    mark_schemes: Mapped[list["MarkSchemeRecord"]] = relationship(
+        "MarkSchemeRecord", back_populates="owner"
     )

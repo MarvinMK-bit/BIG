@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -44,9 +45,12 @@ class QuestionResultOut(BaseModel):
 class SchemeOut(BaseModel):
     scheme_version: str
     name: str
-    subject: str
+    subject: str | None
     description: str | None
     question_count: int
+    origin: Literal["repo", "uploaded"]
+    # Set for uploaded schemes only
+    owner_username: str | None = None
 
 
 class SchemeGradeRequest(BaseModel):

@@ -28,6 +28,8 @@ class MarkScheme:
     source: str
     description: str | None
     questions: list[SchemeQuestion]
+    # Set for schemes loaded from a repo file; None for schemes parsed from uploaded text
+    path: Path | None = None
 
     @property
     def scheme_version(self) -> str:
@@ -99,46 +101,43 @@ def _parse_question(raw: Any, index: int) -> SchemeQuestion:
     )
 
 
-def load_scheme(path: Path) -> MarkScheme:
+def parse_scheme(yaml_text: str) -> MarkScheme:
+    """Parse and validate a mark scheme from YAML text. Raises ValueError on any problem."""
     try:
-        with path.open(encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+        data = yaml.safe_load(yaml_text)
     except yaml.YAMLError as exc:
-        raise ValueError(f"{path}: invalid YAML: {exc}") from exc
+        raise ValueError(f"invalid YAML: {exc}") from exc
 
-    try:
-        if not isinstance(data, dict):
-            raise ValueError("top level must be a mapping")
+    if not isinstance(data, dict):
+        raise ValueError("top level must be a mapping")
 
-        name = _require_str(data, "name", "scheme")
-        version = _require_str(data, "version", "scheme")
-        subject = _require_str(data, "subject", "scheme")
-        source = _require_str(data, "source", "scheme")
-        if source not in VALID_SOURCES:
-            raise ValueError(
-                f"scheme has unknown source {source!r}. Valid sources: {', '.join(sorted(VALID_SOURCES))}"
-            )
+    name = _require_str(data, "name", "scheme")
+    version = _require_str(data, "version", "scheme")
+    subject = _require_str(data, "subject", "scheme")
+    source = _require_str(data, "source", "scheme")
+    if source not in VALID_SOURCES:
+        raise ValueError(
+            f"scheme has unknown source {source!r}. Valid sources: {', '.join(sorted(VALID_SOURCES))}"
+        )
 
-        description = data.get("description")
-        if description is not None and not isinstance(description, str):
-            raise ValueError(f"scheme field 'description' must be a string, got {description!r}")
+    description = data.get("description")
+    if description is not None and not isinstance(description, str):
+        raise ValueError(f"scheme field 'description' must be a string, got {description!r}")
 
-        raw_questions = _require(data, "questions", "scheme")
-        if not isinstance(raw_questions, list) or not raw_questions:
-            raise ValueError("scheme field 'questions' must be a non-empty list")
+    raw_questions = _require(data, "questions", "scheme")
+    if not isinstance(raw_questions, list) or not raw_questions:
+        raise ValueError("scheme field 'questions' must be a non-empty list")
 
-        questions: list[SchemeQuestion] = []
-        seen: set[tuple[str, str | None]] = set()
-        for index, raw in enumerate(raw_questions, start=1):
-            question = _parse_question(raw, index)
-            key = (question.number, question.sub_part)
-            if key in seen:
-                label = question.number + (f" part {question.sub_part}" if question.sub_part else "")
-                raise ValueError(f"duplicate question number {label!r}")
-            seen.add(key)
-            questions.append(question)
-    except ValueError as exc:
-        raise ValueError(f"{path}: {exc}") from exc
+    questions: list[SchemeQuestion] = []
+    seen: set[tuple[str, str | None]] = set()
+    for index, raw in enumerate(raw_questions, start=1):
+        question = _parse_question(raw, index)
+        key = (question.number, question.sub_part)
+        if key in seen:
+            label = question.number + (f" part {question.sub_part}" if question.sub_part else "")
+            raise ValueError(f"duplicate question number {label!r}")
+        seen.add(key)
+        questions.append(question)
 
     return MarkScheme(
         name=name,
@@ -148,6 +147,15 @@ def load_scheme(path: Path) -> MarkScheme:
         description=description,
         questions=questions,
     )
+
+
+def load_scheme(path: Path) -> MarkScheme:
+    try:
+        scheme = parse_scheme(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise ValueError(f"{path}: {exc}") from exc
+    scheme.path = path
+    return scheme
 
 
 def load_all_schemes(directory: Path) -> dict[str, MarkScheme]:
