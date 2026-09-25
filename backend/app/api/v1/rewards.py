@@ -1,3 +1,4 @@
+from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -20,12 +21,25 @@ from app.schemas.reward import (
     MarkPaidIn,
     MyRewardsOut,
     OwedGroupOut,
+    OwedRewardOut,
+    PayoutAttemptOut,
+    PayoutOut,
+    PayoutStatusOut,
     RewardOut,
 )
 from app.services.auth_service import get_current_admin, get_current_user
 from app.services.grading.scheme_store import load_repo_schemes
+from app.services.payouts import blink
+from app.services.payouts.service import (
+    PayoutError,
+    PayoutNotFound,
+    PayoutUnavailable,
+    list_attempts,
+    pay_reward,
+)
 
-# A ledger only: every endpoint here records what is owed or was paid elsewhere. None moves money.
+# The ledger, plus one deliberate way to pay: POST /{id}/pay sends a single reward over Lightning.
+# There is intentionally no endpoint that pays several rewards at once.
 router = APIRouter(prefix="/rewards", tags=["rewards"])
 
 
@@ -100,7 +114,12 @@ async def owed(
                 rewards=[],
             )
         group.total_owed_sats += reward.amount_sats
-        group.rewards.append(RewardOut.from_model(reward))
+        group.rewards.append(
+            OwedRewardOut(
+                **RewardOut.from_model(reward).model_dump(),
+                attempts=[PayoutAttemptOut.model_validate(a) for a in reward.payout_attempts],
+            )
+        )
     return sorted(groups.values(), key=lambda g: (-g.total_owed_sats, g.recipient_username))
 
 
@@ -133,3 +152,51 @@ async def cancel(
         raise _ledger_error(exc)
     await session.commit()
     return RewardOut.from_model(reward)
+
+
+@router.get("/payouts", response_model=PayoutStatusOut)
+async def payout_status(admin: User = Depends(get_current_admin)) -> PayoutStatusOut:
+    """Whether Pay would send, and to which network. Never includes the key or wallet id."""
+    settings = get_settings()
+    return PayoutStatusOut(
+        enabled=settings.PAYOUTS_ENABLED,
+        configured=bool(
+            settings.BLINK_API_KEY and settings.BLINK_API_KEY.get_secret_value() and settings.BLINK_WALLET_ID
+        ),
+        network=blink.network_of(settings.BLINK_API_URL),
+        api_host=urlparse(settings.BLINK_API_URL).hostname or settings.BLINK_API_URL,
+        problem=blink.config_problem(settings),
+    )
+
+
+@router.post("/{reward_id}/pay", response_model=PayoutOut)
+async def pay(
+    reward_id: UUID,
+    admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_db),
+) -> PayoutOut:
+    """Send one owed reward over Lightning. A failed payment is still a 200: the attempt is recorded
+    and returned, and its status says what happened."""
+    try:
+        outcome = await pay_reward(session, reward_id)
+    except PayoutUnavailable as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    except PayoutNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except PayoutError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    return PayoutOut(
+        attempt=PayoutAttemptOut.model_validate(outcome.attempt),
+        reward=RewardOut.from_model(outcome.reward),
+    )
+
+
+@router.get("/{reward_id}/attempts", response_model=list[PayoutAttemptOut])
+async def attempts(
+    reward_id: UUID,
+    admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_db),
+) -> list[PayoutAttemptOut]:
+    if await RewardRepository(session).get_by_id(reward_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reward not found")
+    return [PayoutAttemptOut.model_validate(a) for a in await list_attempts(session, reward_id)]

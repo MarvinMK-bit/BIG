@@ -97,8 +97,7 @@ export function ModerationList({ initialItems }: { initialItems: Feedback[] }) {
                 </p>
                 {reward && (
                   <p className={`text-xs ${muted}`}>
-                    Recorded in the ledger as {reward.status}. Payouts are not yet automated; nothing
-                    has been paid. Pay by hand, then mark it paid on{" "}
+                    Recorded in the ledger as {reward.status}. Nothing has been paid yet; pay it from{" "}
                     <Link href="/rewards" className="underline">
                       Rewards
                     </Link>

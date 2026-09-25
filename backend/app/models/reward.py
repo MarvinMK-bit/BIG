@@ -11,6 +11,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.feedback import Feedback
+    from app.models.payout_attempt import PayoutAttempt
     from app.models.user import User
 
 
@@ -63,3 +64,6 @@ class Reward(Base):
     recipient: Mapped["User"] = relationship("User", foreign_keys=[recipient_id])
     awarded_by: Mapped["User"] = relationship("User", foreign_keys=[awarded_by_id])
     feedback: Mapped["Feedback | None"] = relationship("Feedback")
+    payout_attempts: Mapped[list["PayoutAttempt"]] = relationship(
+        "PayoutAttempt", back_populates="reward", order_by="PayoutAttempt.created_at"
+    )

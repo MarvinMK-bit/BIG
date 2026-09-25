@@ -14,18 +14,26 @@ const STATUS_STYLES: Record<RewardStatus, string> = {
   cancelled: "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100",
 };
 
-// "paid" is a record an admin made; the tooltip says so rather than implying BIG sent anything.
+export function paidViaLightning(reward: Reward): boolean {
+  return reward.payment_ref?.startsWith("blink") ?? false;
+}
+
+// "paid" when Blink reported a Lightning payout; "recorded paid" when an admin noted a payment
+// made outside BIG, so the badge never implies more than is known.
 export function RewardStatusBadge({ reward }: { reward: Reward }) {
+  const lightning = paidViaLightning(reward);
   const title =
     reward.status === "paid"
-      ? `Recorded as paid by an admin${reward.payment_ref ? ` (ref ${reward.payment_ref})` : ""}`
+      ? lightning
+        ? "Paid over Lightning via Blink"
+        : `Recorded as paid by an admin${reward.payment_ref ? ` (ref ${reward.payment_ref})` : ""}`
       : undefined;
   return (
     <span
       title={title}
       className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[reward.status]}`}
     >
-      {reward.status === "paid" ? "recorded paid" : reward.status}
+      {reward.status === "paid" && !lightning ? "recorded paid" : reward.status}
     </span>
   );
 }

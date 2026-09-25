@@ -99,7 +99,10 @@ class RewardRepository:
     async def list_owed(self) -> list[Reward]:
         """Everything still owed, oldest first. For admins only."""
         result = await self.session.execute(
-            _select().where(Reward.status == RewardStatus.OWED).order_by(Reward.created_at)
+            _select()
+            .options(selectinload(Reward.payout_attempts))
+            .where(Reward.status == RewardStatus.OWED)
+            .order_by(Reward.created_at)
         )
         return list(result.scalars().all())
 

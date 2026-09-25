@@ -137,7 +137,7 @@ export type VerdictHistory = {
   offset: number;
 };
 
-export type Me = { id: string; username: string; is_admin: boolean };
+export type Me = { id: string; username: string; is_admin: boolean; blink_address: string | null };
 
 export type FeedbackStatus = "pending" | "approved" | "rejected" | "muted";
 
@@ -181,7 +181,8 @@ export function feedbackListPath(target: FeedbackTarget): string {
 export type FeedbackReview = Feedback & { reward: Reward | null };
 
 export type RewardReason = "feedback" | "mark_scheme" | "scheme_improvement";
-// "paid" means an admin recorded a payment made outside BIG; nothing here moves money.
+// "paid" is either a Lightning payout Blink reported as sent (payment_ref "blink:…") or a payment
+// an admin made outside BIG and recorded by hand.
 export type RewardStatus = "owed" | "paid" | "cancelled";
 
 export type Reward = {
@@ -209,10 +210,46 @@ export type Reward = {
 
 export type MyRewards = { total_owed_sats: number; rewards: Reward[] };
 
+export type AttemptStatus = "attempting" | "success" | "failed" | "pending" | "already_paid";
+
+// One try at paying a reward over Lightning, recorded before Blink is called.
+export type PayoutAttempt = {
+  id: string;
+  reward_id: string;
+  amount_sats: number;
+  lightning_address: string;
+  status: AttemptStatus;
+  blink_status: string | null;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
+// Attempts that have, or may have, sent the sats: the backend refuses another Pay while one exists.
+export const BLOCKING_ATTEMPTS: ReadonlySet<AttemptStatus> = new Set([
+  "attempting",
+  "pending",
+  "success",
+  "already_paid",
+]);
+
+export type OwedReward = Reward & { attempts: PayoutAttempt[] };
+
 export type OwedGroup = {
   recipient_id: string;
   recipient_username: string;
   blink_address: string | null;
   total_owed_sats: number;
-  rewards: Reward[];
+  rewards: OwedReward[];
 };
+
+export type PayoutStatus = {
+  enabled: boolean;
+  configured: boolean;
+  network: "staging" | "mainnet" | "other";
+  api_host: string;
+  // Why Pay would be refused right now, if it would
+  problem: string | null;
+};
+
+export type PayoutResult = { attempt: PayoutAttempt; reward: Reward };

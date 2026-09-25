@@ -2,7 +2,7 @@ import json
 from functools import lru_cache
 from typing import Annotated, Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     # Ledger amounts; recorded as owed, paid by hand until Lightning payouts exist
     FEEDBACK_REWARD_SATS: int = Field(default=100, gt=0)
     SCHEME_REWARD_SATS: int = Field(default=500, gt=0)
+
+    # Blink Lightning payouts. The default URL is STAGING (test sats); https://api.blink.sv/graphql
+    # is mainnet and sends real bitcoin. Nothing is sent unless PAYOUTS_ENABLED is true.
+    BLINK_API_URL: str = "https://api.staging.blink.sv/graphql"
+    # SecretStr so the key never appears in a repr, log line or traceback
+    BLINK_API_KEY: SecretStr | None = None
+    BLINK_WALLET_ID: str | None = None
+    PAYOUTS_ENABLED: bool = False
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod

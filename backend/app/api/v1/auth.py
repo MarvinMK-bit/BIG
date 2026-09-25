@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
-from app.schemas.user import Token, UserCreate, UserOut
+from app.schemas.user import Token, UserCreate, UserOut, UserUpdate
 from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -68,4 +68,24 @@ async def login(
 
 @router.get("/me", response_model=UserOut)
 async def read_current_user(user: User = Depends(get_current_user)) -> User:
+    return user
+
+
+@router.patch("/me", response_model=UserOut)
+async def update_current_user(
+    payload: UserUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> User:
+    repo = UserRepository(session)
+    if "blink_address" in payload.model_fields_set:
+        await repo.set_blink_address(user, payload.blink_address)
+    if "attribution_opt_in" in payload.model_fields_set:
+        if payload.attribution_opt_in is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="attribution_opt_in must be true or false",
+            )
+        await repo.set_attribution_opt_in(user, payload.attribution_opt_in)
+    await session.commit()
     return user

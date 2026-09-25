@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from app.models.reward import Reward, RewardReason, RewardStatus
 
@@ -74,13 +74,48 @@ class MyRewardsOut(BaseModel):
     rewards: list[RewardOut]
 
 
+class PayoutAttemptOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    reward_id: uuid.UUID
+    amount_sats: int
+    lightning_address: str
+    status: str
+    blink_status: str | None
+    error_message: str | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class OwedRewardOut(RewardOut):
+    attempts: list[PayoutAttemptOut]
+
+
 class OwedGroupOut(BaseModel):
     recipient_id: uuid.UUID
     recipient_username: str
-    # Where the admin can send the payment by hand, if the recipient has given one
+    # The recipient's Lightning address; payouts go here, and without one they can't be paid
     blink_address: str | None
     total_owed_sats: int
-    rewards: list[RewardOut]
+    rewards: list[OwedRewardOut]
+
+
+class PayoutOut(BaseModel):
+    attempt: PayoutAttemptOut
+    reward: RewardOut
+
+
+class PayoutStatusOut(BaseModel):
+    """What the payouts banner shows. Deliberately excludes the API key and wallet id."""
+
+    enabled: bool
+    # Key and wallet id both set
+    configured: bool
+    network: Literal["staging", "mainnet", "other"]
+    api_host: str
+    # Why a Pay button would be refused right now, if it would
+    problem: str | None
 
 
 class ManualAwardIn(BaseModel):

@@ -20,6 +20,9 @@ pyyaml==6.0.3
 # LLM grading
 anthropic==1.7.0
 
+# Blink Lightning payouts (httpx2 is also what anthropic uses)
+httpx2==2.13.0
+
 # Marking guide DOCX export and review import
 python-docx==1.2.0
 

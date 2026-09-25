@@ -2,14 +2,17 @@ import { LocalTime } from "@/components/local-time";
 import { formatSats, REASON_LABELS, RewardFor, RewardStatusBadge } from "@/components/reward-bits";
 import { muted } from "@/components/ui";
 import { backendGet } from "@/lib/backend";
-import type { Me, MyRewards, OwedGroup } from "@/lib/types";
+import type { Me, MyRewards, OwedGroup, PayoutStatus } from "@/lib/types";
+import { AddressForm } from "./address-form";
 import { OwedList } from "./owed-list";
+import { PayoutsBanner } from "./payouts-banner";
 
 export default async function RewardsPage() {
   const me = await backendGet<Me>("/auth/me");
-  const [mine, owed] = await Promise.all([
+  const [mine, owed, payouts] = await Promise.all([
     backendGet<MyRewards>("/rewards/me"),
     me.is_admin ? backendGet<OwedGroup[]>("/rewards/owed") : Promise.resolve(null),
+    me.is_admin ? backendGet<PayoutStatus>("/rewards/payouts") : Promise.resolve(null),
   ]);
 
   return (
@@ -17,11 +20,13 @@ export default async function RewardsPage() {
       <header className="flex flex-col gap-3">
         <h1 className="text-xl font-semibold">Rewards</h1>
         <p className="rounded border border-zinc-300 p-3 text-sm dark:border-zinc-700">
-          Payouts are recorded by hand for now. Lightning payment is not yet wired up, so nothing on
-          this page sends or receives sats. &ldquo;Recorded paid&rdquo; means an admin has noted a
-          payment they made outside BIG.
+          Rewards are paid over Lightning to the address below, one at a time, by an admin. A reward
+          marked &ldquo;owed&rdquo; has not been sent. &ldquo;Recorded paid&rdquo; means an admin
+          paid it outside BIG and noted it here.
         </p>
       </header>
+
+      <AddressForm initial={me.blink_address} />
 
       <section className="flex flex-col gap-3">
         <div>
@@ -68,13 +73,15 @@ export default async function RewardsPage() {
         )}
       </section>
 
-      {owed && (
+      {owed && payouts && (
         <section className="flex flex-col gap-3 border-t border-zinc-300 pt-6 dark:border-zinc-700">
           <h2 className="text-lg font-semibold">Owed by recipient</h2>
+          <PayoutsBanner status={payouts} />
           <p className={`text-sm ${muted}`}>
-            Pay each person outside BIG first, then record it here with the payment&apos;s reference.
+            Pay sends one reward to the recipient&apos;s Lightning address. If you paid someone
+            another way, use &ldquo;Record payment&rdquo; with that payment&apos;s reference instead.
           </p>
-          <OwedList initialGroups={owed} />
+          <OwedList initialGroups={owed} payouts={payouts} />
         </section>
       )}
     </main>
