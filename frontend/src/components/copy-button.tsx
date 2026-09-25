@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export function CopyButton({ text }: { text: string }) {
+export function CopyButton({ text, label = "Copy YAML" }: { text: string; label?: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
 
   async function copy() {
@@ -18,7 +18,7 @@ export function CopyButton({ text }: { text: string }) {
 
   return (
     <button onClick={copy} className="min-h-9 rounded border border-zinc-400 px-3 text-sm">
-      {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy YAML"}
+      {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : label}
     </button>
   );
 }

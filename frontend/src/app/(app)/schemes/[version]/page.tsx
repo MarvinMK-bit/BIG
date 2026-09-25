@@ -1,8 +1,8 @@
 import Link from "next/link";
+import { CopyButton } from "@/components/copy-button";
 import { FeedbackThread } from "@/components/feedback-thread";
 import { backendGet, backendGetText } from "@/lib/backend";
 import { feedbackListPath, type Feedback, type Me } from "@/lib/types";
-import { CopyButton } from "./copy-button";
 
 // Depending on the client, "@" may reach us still percent-encoded; decode defensively.
 function decodeParam(value: string): string {

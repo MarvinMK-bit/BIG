@@ -27,6 +27,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Rewards
             </Link>
             {user.is_admin && (
+              <Link href="/guides" className="underline">
+                Guides
+              </Link>
+            )}
+            {user.is_admin && (
               <Link href="/moderation" className="flex items-center gap-1.5 underline">
                 Moderation
                 {pendingCount > 0 && (

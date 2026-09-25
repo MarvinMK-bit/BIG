@@ -15,6 +15,29 @@ export type GradingSession = {
   ocr_markdown: string | null;
 };
 
+export type GuideStatus = "pending" | "processing" | "extracted" | "failed";
+
+// A photographed marking guide: the correct answers, not a student's script. Admin only.
+export type MarkingGuide = {
+  id: string;
+  original_filename: string;
+  mime_type: string;
+  file_size_bytes: number;
+  subject: string | null;
+  title: string | null;
+  status: GuideStatus;
+  ocr_engine: string | null;
+  ocr_markdown: string | null;
+  ocr_confidence: number | null;
+  error_message: string | null;
+  created_at: string;
+  extracted_at: string | null;
+};
+
+export function guideTitle(guide: MarkingGuide): string {
+  return guide.title ?? guide.original_filename;
+}
+
 export type Scheme = {
   // "name@version"
   scheme_version: string;
