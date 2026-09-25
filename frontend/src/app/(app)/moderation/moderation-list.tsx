@@ -7,7 +7,8 @@ import { RelativeTime } from "@/components/relative-time";
 import { muted } from "@/components/ui";
 import { apiRequest } from "@/lib/api-client";
 import { questionLabel } from "@/lib/script";
-import { FEEDBACK_REWARD_SATS, type Feedback, type FeedbackStatus } from "@/lib/types";
+import { formatSats } from "@/components/reward-bits";
+import type { Feedback, FeedbackReview, FeedbackStatus, Reward } from "@/lib/types";
 
 type Decision = Exclude<FeedbackStatus, "pending">;
 
@@ -38,21 +39,21 @@ export function ModerationList({ initialItems }: { initialItems: Feedback[] }) {
   const [, startTransition] = useTransition();
   // Kept client-side, so decided items stay on screen (with the payout reminder) after the
   // refresh that updates the nav badge
-  const [decided, setDecided] = useState<Record<string, Decision>>({});
+  const [decided, setDecided] = useState<Record<string, { status: Decision; reward: Reward | null }>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   async function decide(item: Feedback, status: Decision) {
     setBusy(item.id);
     setErrors((e) => ({ ...e, [item.id]: "" }));
-    const result = await apiRequest<Feedback>(`/api/feedback/${item.id}/status`, {
+    const result = await apiRequest<FeedbackReview>(`/api/feedback/${item.id}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
     setBusy(null);
     if (!result.ok) return setErrors((e) => ({ ...e, [item.id]: result.error }));
-    setDecided((d) => ({ ...d, [item.id]: status }));
+    setDecided((d) => ({ ...d, [item.id]: { status, reward: result.data.reward } }));
     startTransition(() => router.refresh());
   }
 
@@ -63,7 +64,8 @@ export function ModerationList({ initialItems }: { initialItems: Feedback[] }) {
   return (
     <ol className="flex flex-col gap-3">
       {initialItems.map((item) => {
-        const decision = decided[item.id];
+        const decision = decided[item.id]?.status;
+        const reward = decided[item.id]?.reward ?? null;
         return (
           <li
             key={item.id}
@@ -89,11 +91,20 @@ export function ModerationList({ initialItems }: { initialItems: Feedback[] }) {
             {decision === "approved" ? (
               <div role="status" className="flex flex-col gap-0.5 text-sm">
                 <p className="font-medium text-green-800 dark:text-green-300">
-                  Approved — {FEEDBACK_REWARD_SATS} sats payable to {item.author_username}
+                  {reward
+                    ? `Approved — ${formatSats(reward.amount_sats)} payable to ${reward.recipient_username}`
+                    : "Approved — no reward was recorded"}
                 </p>
-                <p className={`text-xs ${muted}`}>
-                  Payouts are not yet automated; send this one by hand.
-                </p>
+                {reward && (
+                  <p className={`text-xs ${muted}`}>
+                    Recorded in the ledger as {reward.status}. Payouts are not yet automated; nothing
+                    has been paid. Pay by hand, then mark it paid on{" "}
+                    <Link href="/rewards" className="underline">
+                      Rewards
+                    </Link>
+                    .
+                  </p>
+                )}
               </div>
             ) : decision ? (
               <p role="status" className="text-sm font-medium">

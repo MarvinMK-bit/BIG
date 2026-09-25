@@ -167,7 +167,8 @@ export type Feedback = {
   reviewed_at: string | null;
 };
 
-// The approved sats reward for useful feedback; payouts are manual for now.
+// Shown in the feedback prompt. The amount actually recorded comes from the backend's
+// FEEDBACK_REWARD_SATS setting; keep the two in step.
 export const FEEDBACK_REWARD_SATS = 100;
 
 export function feedbackListPath(target: FeedbackTarget): string {
@@ -175,3 +176,43 @@ export function feedbackListPath(target: FeedbackTarget): string {
     ? `/feedback/result/${encodeURIComponent(target.id)}`
     : `/feedback/scheme/${encodeURIComponent(target.version)}`;
 }
+
+// The approve/reject/mute response: the feedback plus its ledger entry, if it has one.
+export type FeedbackReview = Feedback & { reward: Reward | null };
+
+export type RewardReason = "feedback" | "mark_scheme" | "scheme_improvement";
+// "paid" means an admin recorded a payment made outside BIG; nothing here moves money.
+export type RewardStatus = "owed" | "paid" | "cancelled";
+
+export type Reward = {
+  id: string;
+  recipient_username: string;
+  amount_sats: number;
+  reason: RewardReason;
+  note: string | null;
+  status: RewardStatus;
+  mark_scheme_version: string | null;
+  // The feedback it was for, when reason is "feedback"
+  feedback: {
+    id: string;
+    public_ref: string;
+    mark_scheme_version: string | null;
+    question_result_id: string | null;
+    session_id: string | null;
+    question_number: string | null;
+    sub_part: string | null;
+  } | null;
+  created_at: string;
+  paid_at: string | null;
+  payment_ref: string | null;
+};
+
+export type MyRewards = { total_owed_sats: number; rewards: Reward[] };
+
+export type OwedGroup = {
+  recipient_id: string;
+  recipient_username: string;
+  blink_address: string | null;
+  total_owed_sats: number;
+  rewards: Reward[];
+};

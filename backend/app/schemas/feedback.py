@@ -6,6 +6,7 @@ from pydantic import BaseModel, StringConstraints, field_validator
 
 from app.models.feedback import Feedback, FeedbackStatus, FeedbackTarget
 from app.repositories.feedback_repo import REVIEW_STATUSES
+from app.schemas.reward import RewardOut
 
 FeedbackBody = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=10_000)]
 AuthorContext = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -78,3 +79,8 @@ class FeedbackOut(BaseModel):
             edited_at=feedback.edited_at,
             reviewed_at=feedback.reviewed_at,
         )
+
+
+class FeedbackReviewOut(FeedbackOut):
+    # The ledger entry for approved feedback, whether created by this review or an earlier one
+    reward: RewardOut | None

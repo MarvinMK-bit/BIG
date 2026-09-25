@@ -3,9 +3,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.feedback import Feedback, FeedbackStatus, FeedbackTarget
 from app.models.question_result import QuestionResult
+from app.models.reward import RewardReason
 from app.models.user import User
 from app.repositories.feedback_repo import (
     FeedbackError,
@@ -13,7 +15,15 @@ from app.repositories.feedback_repo import (
     NotEditableError,
     check_target,
 )
-from app.schemas.feedback import FeedbackCreate, FeedbackEdit, FeedbackOut, FeedbackStatusUpdate
+from app.repositories.reward_repo import RewardRepository
+from app.schemas.feedback import (
+    FeedbackCreate,
+    FeedbackEdit,
+    FeedbackOut,
+    FeedbackReviewOut,
+    FeedbackStatusUpdate,
+)
+from app.schemas.reward import RewardOut
 from app.services.auth_service import get_current_admin, get_current_user
 from app.services.grading.scheme_store import get_visible_record, load_repo_schemes
 
@@ -144,18 +154,36 @@ async def edit_feedback(
     return FeedbackOut.from_model(feedback)
 
 
-@router.patch("/{feedback_id}/status", response_model=FeedbackOut)
+@router.patch("/{feedback_id}/status", response_model=FeedbackReviewOut)
 async def set_feedback_status(
     feedback_id: UUID,
     payload: FeedbackStatusUpdate,
     admin: User = Depends(get_current_admin),
     session: AsyncSession = Depends(get_db),
-) -> FeedbackOut:
+) -> FeedbackReviewOut:
     repo = FeedbackRepository(session)
+    # The row lock also serialises concurrent approvals, so only one of them can award
     feedback = await repo.get_by_id(feedback_id, for_update=True)
     if feedback is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feedback not found")
 
     await repo.set_status(feedback, payload.status, admin.id)
+
+    # Approval records sats as owed, in the same transaction; it pays nothing.
+    # Re-approving keeps the existing reward rather than awarding again.
+    rewards = RewardRepository(session)
+    reward = await rewards.get_for_feedback(feedback.id)
+    if payload.status == FeedbackStatus.APPROVED and reward is None:
+        reward = await rewards.create(
+            recipient_id=feedback.author_id,
+            amount_sats=get_settings().FEEDBACK_REWARD_SATS,
+            reason=RewardReason.FEEDBACK,
+            note=f"Approved feedback {feedback.public_ref}",
+            feedback_id=feedback.id,
+            awarded_by_id=admin.id,
+        )
     await session.commit()
-    return FeedbackOut.from_model(feedback)
+    return FeedbackReviewOut(
+        **FeedbackOut.from_model(feedback).model_dump(),
+        reward=RewardOut.from_model(reward) if reward else None,
+    )

@@ -2,7 +2,7 @@ import json
 from functools import lru_cache
 from typing import Annotated, Any
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -31,6 +31,10 @@ class Settings(BaseSettings):
 
     ANTHROPIC_API_KEY: str | None = None
     LLM_GRADER_MODEL: str = "claude-sonnet-4-5"
+
+    # Ledger amounts; recorded as owed, paid by hand until Lightning payouts exist
+    FEEDBACK_REWARD_SATS: int = Field(default=100, gt=0)
+    SCHEME_REWARD_SATS: int = Field(default=500, gt=0)
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
