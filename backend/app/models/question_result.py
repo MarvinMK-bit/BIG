@@ -52,6 +52,8 @@ class QuestionResult(Base):
 
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_correct_per_human: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # When the verdict was last set; None when there is no verdict, or it predates this column
+    verdict_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

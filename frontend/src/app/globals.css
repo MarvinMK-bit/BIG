@@ -24,3 +24,39 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Chart colours: categorical slots in fixed order, validated against the page background in
+   each mode (see the dataviz palette). Slots 3-4 are under 3:1 in light mode, so charts using
+   them keep a legend and a table view. */
+.viz-root {
+  --viz-surface: var(--background);
+  --viz-grid: #e4e4e7;
+  --viz-axis: #a1a1aa;
+  --viz-text-primary: #0b0b0b;
+  --viz-text-secondary: #52514e;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+}
+
+@media (prefers-color-scheme: dark) {
+  .viz-root {
+    --viz-grid: #27272a;
+    --viz-axis: #52525b;
+    --viz-text-primary: #ffffff;
+    --viz-text-secondary: #c3c2b7;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+  }
+}

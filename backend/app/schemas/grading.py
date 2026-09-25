@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -110,3 +110,50 @@ class GraderAccuracyOut(BaseModel):
     judged_questions: int
     correct_decisions: int
     accuracy: float | None
+
+
+class AccuracyPointOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    period_start: date
+    grader_type: GraderType
+    mark_scheme_version: str | None
+    judged_questions: int
+    correct_decisions: int
+    accuracy: float | None
+    cumulative_judged: int
+    cumulative_correct: int
+    cumulative_accuracy: float | None
+
+
+class GraderVerdictOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    grader_type: GraderType
+    mark_scheme_version: str | None
+    mark_awarded: float | None
+    max_mark: float
+    agreed: bool
+
+
+class JudgedQuestionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    session_id: uuid.UUID
+    owner_id: uuid.UUID
+    owner_username: str
+    original_filename: str
+    subject: str | None
+    question_number: str
+    sub_part: str | None
+    extracted_answer: str | None
+    verdict: bool
+    verdict_set_at: datetime | None
+    graders: list[GraderVerdictOut]
+
+
+class VerdictHistoryOut(BaseModel):
+    items: list[JudgedQuestionOut]
+    total: int
+    limit: int
+    offset: int

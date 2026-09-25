@@ -92,3 +92,47 @@ export type GraderAccuracy = {
   correct_decisions: number;
   accuracy: number | null;
 };
+
+export type Bucket = "day" | "week" | "month";
+
+// One grader's accuracy in one time bucket, with running totals up to and including it.
+export type AccuracyPoint = {
+  period_start: string; // YYYY-MM-DD, UTC
+  grader_type: "llm" | "mark_scheme";
+  mark_scheme_version: string | null;
+  judged_questions: number;
+  correct_decisions: number;
+  accuracy: number | null;
+  cumulative_judged: number;
+  cumulative_correct: number;
+  cumulative_accuracy: number | null;
+};
+
+export type GraderVerdict = {
+  grader_type: "llm" | "mark_scheme";
+  mark_scheme_version: string | null;
+  mark_awarded: number | null;
+  max_mark: number;
+  agreed: boolean;
+};
+
+export type JudgedQuestion = {
+  session_id: string;
+  owner_id: string;
+  owner_username: string;
+  original_filename: string;
+  subject: string | null;
+  question_number: string;
+  sub_part: string | null;
+  extracted_answer: string | null;
+  verdict: boolean;
+  verdict_set_at: string | null;
+  graders: GraderVerdict[];
+};
+
+export type VerdictHistory = {
+  items: JudgedQuestion[];
+  total: number;
+  limit: number;
+  offset: number;
+};

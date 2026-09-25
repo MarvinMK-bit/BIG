@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from app.repositories.grading_repo import GradingSessionRepository
 from app.repositories.result_repo import QuestionResultRepository
 from app.repositories.scheme_repo import MarkSchemeRepository
 from app.schemas.grading import (
+    AccuracyPointOut,
     GraderAccuracyOut,
     GradingRunOut,
     GradingSessionOut,
@@ -24,6 +25,7 @@ from app.schemas.grading import (
     SchemeGradeRequest,
     SchemeGradeResponse,
     SchemeOut,
+    VerdictHistoryOut,
     VerdictRequest,
 )
 from app.services.auth_service import get_current_admin, get_current_user
@@ -34,7 +36,7 @@ from app.services.grading import (
     grade_with_scheme,
     run_ocr,
 )
-from app.services.grading.accuracy import measure_accuracy
+from app.services.grading.accuracy import Bucket, measure_accuracy, measure_accuracy_over_time
 from app.services.grading.comparison import RunNotFoundError, compare_runs
 from app.services.grading.scheme_export import export_filename, export_text
 from app.services.grading.scheme_store import (
@@ -490,3 +492,58 @@ async def get_global_accuracy(
 ) -> list[GraderAccuracyOut]:
     accuracy = await measure_accuracy(session)
     return [GraderAccuracyOut.model_validate(a) for a in accuracy]
+
+
+@router.get("/accuracy/history", response_model=list[AccuracyPointOut])
+async def get_accuracy_history(
+    bucket: Bucket = "week",
+    subject: str | None = None,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> list[AccuracyPointOut]:
+    points = await measure_accuracy_over_time(session, owner_id=user.id, subject=subject, bucket=bucket)
+    return [AccuracyPointOut.model_validate(p) for p in points]
+
+
+@router.get("/accuracy/history/global", response_model=list[AccuracyPointOut])
+async def get_global_accuracy_history(
+    bucket: Bucket = "week",
+    subject: str | None = None,
+    admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_db),
+) -> list[AccuracyPointOut]:
+    points = await measure_accuracy_over_time(session, subject=subject, bucket=bucket)
+    return [AccuracyPointOut.model_validate(p) for p in points]
+
+
+async def _verdict_history(
+    session: AsyncSession, owner_id: UUID | None, limit: int, offset: int, subject: str | None
+) -> VerdictHistoryOut:
+    items, total = await QuestionResultRepository(session).list_judged(
+        owner_id, limit=limit, offset=offset, subject=subject
+    )
+    return VerdictHistoryOut.model_validate(
+        {"items": items, "total": total, "limit": limit, "offset": offset}, from_attributes=True
+    )
+
+
+@router.get("/verdicts", response_model=VerdictHistoryOut)
+async def get_verdicts(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    subject: str | None = None,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> VerdictHistoryOut:
+    return await _verdict_history(session, user.id, limit, offset, subject)
+
+
+@router.get("/verdicts/global", response_model=VerdictHistoryOut)
+async def get_global_verdicts(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    subject: str | None = None,
+    admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_db),
+) -> VerdictHistoryOut:
+    return await _verdict_history(session, None, limit, offset, subject)
