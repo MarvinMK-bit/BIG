@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
@@ -35,6 +36,7 @@ from app.services.grading import (
 )
 from app.services.grading.accuracy import measure_accuracy
 from app.services.grading.comparison import RunNotFoundError, compare_runs
+from app.services.grading.scheme_export import export_filename, export_text
 from app.services.grading.scheme_store import (
     can_view,
     get_visible_record,
@@ -260,6 +262,31 @@ async def get_scheme_yaml(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Mark scheme {scheme_version!r} not found"
         )
     return PlainTextResponse(record.yaml_content)
+
+
+@router.get("/schemes/{scheme_version}/export")
+async def export_scheme(
+    scheme_version: str,
+    admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_db),
+) -> Response:
+    """A database scheme as a repo-ready YAML file, for committing to the repository."""
+    record = await MarkSchemeRepository(session).get_by_version(scheme_version)
+    if record is None:
+        detail = (
+            f"Mark scheme {scheme_version!r} is already a repo file"
+            if scheme_version in load_repo_schemes()
+            else f"Mark scheme {scheme_version!r} not found"
+        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+
+    return Response(
+        content=export_text(record, datetime.now(UTC).date()),
+        media_type="application/yaml",
+        headers={
+            "Content-Disposition": f'attachment; filename="{export_filename(record.name)}"'
+        },
+    )
 
 
 @router.delete("/schemes/{scheme_version}", status_code=status.HTTP_204_NO_CONTENT)

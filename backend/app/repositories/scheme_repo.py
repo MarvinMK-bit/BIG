@@ -74,6 +74,15 @@ class MarkSchemeRepository:
         )
         return list(result.scalars().all())
 
+    async def list_everything(self) -> list[MarkSchemeRecord]:
+        """Every scheme regardless of visibility, oldest first. For admin tooling only."""
+        result = await self.session.execute(
+            select(MarkSchemeRecord)
+            .options(selectinload(MarkSchemeRecord.owner))
+            .order_by(MarkSchemeRecord.created_at, MarkSchemeRecord.name, MarkSchemeRecord.version)
+        )
+        return list(result.scalars().all())
+
     async def delete_own(self, scheme_id: UUID, owner_id: UUID) -> bool:
         """Delete the scheme if owner_id owns it. Returns whether anything was deleted."""
         record = await self.get_by_id(scheme_id)
