@@ -7,13 +7,14 @@ from app.models.grading_session import GradingSession
 from app.models.question_result import GraderType, QuestionResult
 from app.services.grading.matchers import MATCHERS
 from app.services.grading.errors import NoQuestionMarkersError
+from app.services.grading.procedures import get_procedure
 from app.services.grading.parser import (
     ParsedAnswer,
     has_question_markers,
     parse_answers,
     parse_lines_as_questions,
 )
-from app.services.grading.schemes import MarkScheme, SchemeQuestion
+from app.services.grading.schemes import PROCEDURE_MATCHER, MarkScheme, SchemeQuestion
 
 _QuestionKey = tuple[str, str | None]
 
@@ -36,12 +37,36 @@ def _expected_for(question: SchemeQuestion) -> str | Decimal:
     return str(question.answer)
 
 
+def _grade_procedure(question: SchemeQuestion, parsed: ParsedAnswer) -> tuple[Decimal, str]:
+    label = _label(question)
+    if question.procedure is None:
+        raise ValueError(f"Question {label} uses the procedure matcher but names no procedure")
+    try:
+        procedure = get_procedure(question.procedure)
+    except ValueError as exc:
+        raise ValueError(f"Question {label}: {exc}") from None
+
+    working = [line.strip() for line in parsed.working.splitlines() if line.strip()]
+    awards = procedure.grade(working, question.params, question.marks)
+    max_by_id = {mark.id: mark.max_mark for mark in question.marks}
+    mark = sum((award.awarded for award in awards), Decimal(0))
+    outcomes = "\n".join(
+        f"{award.mark_id} {award.awarded}/{max_by_id[award.mark_id]}: {award.reason}"
+        for award in awards
+    )
+    return mark, f"Marked by the {procedure.name} procedure.\n{outcomes}"
+
+
 def _grade_question(
     question: SchemeQuestion, parsed: ParsedAnswer | None
 ) -> tuple[Decimal, str]:
     label = _label(question)
     if parsed is None:
         return Decimal(0), f"No answer found for question {label}."
+    if question.matcher == PROCEDURE_MATCHER:
+        if not parsed.working:
+            return Decimal(0), f"Question {label} has no working written."
+        return _grade_procedure(question, parsed)
     if not parsed.raw_answer:
         return Decimal(0), f"Question {label} has no answer written."
 

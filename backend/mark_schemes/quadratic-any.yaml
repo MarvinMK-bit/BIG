@@ -1,0 +1,24 @@
+name: quadratic-any
+version: 0.1.0
+subject: mathematics
+source: manual
+description: >-
+  Solving a quadratic equation, marked on the working rather than the final answer.
+  The scheme carries no fixed equation: it reads the equation from the student's
+  first line, so it marks ANY quadratic ax^2 + bx + c = 0. Either the product-sum
+  (factorisation) or quadratic formula route is accepted, decided by the student's
+  second line, and every line is checked algebraically. Marking stops at the first
+  incorrect step and nothing after it is credited, not even a correct final answer.
+  This is deliberately stricter than UNEB follow-through marking.
+questions:
+  - number: "1"
+    max_mark: 3
+    matcher: procedure
+    procedure: quadratic
+    marks:
+      - id: M1
+        description: Correct equation identified and coefficients extracted
+      - id: M1b
+        description: Correct method applied to the next step
+      - id: A1
+        description: Both roots correct and stated
