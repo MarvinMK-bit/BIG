@@ -136,3 +136,42 @@ export type VerdictHistory = {
   limit: number;
   offset: number;
 };
+
+export type Me = { id: string; username: string; is_admin: boolean };
+
+export type FeedbackStatus = "pending" | "approved" | "rejected" | "muted";
+
+// What a feedback thread hangs off: one question result, or one mark scheme.
+export type FeedbackTarget =
+  | { kind: "result"; id: string }
+  | { kind: "scheme"; version: string };
+
+export type Feedback = {
+  id: string;
+  public_ref: string; // e.g. "0001a"; replies share the number: "0001b"
+  author_username: string;
+  author_context: string | null;
+  target_type: "question_result" | "mark_scheme";
+  question_result_id: string | null;
+  // Set for question-result targets, so they can be linked to
+  session_id: string | null;
+  question_number: string | null;
+  sub_part: string | null;
+  mark_scheme_version: string | null;
+  parent_id: string | null;
+  parent_public_ref: string | null;
+  body: string;
+  status: FeedbackStatus;
+  created_at: string;
+  edited_at: string | null;
+  reviewed_at: string | null;
+};
+
+// The approved sats reward for useful feedback; payouts are manual for now.
+export const FEEDBACK_REWARD_SATS = 100;
+
+export function feedbackListPath(target: FeedbackTarget): string {
+  return target.kind === "result"
+    ? `/feedback/result/${encodeURIComponent(target.id)}`
+    : `/feedback/scheme/${encodeURIComponent(target.version)}`;
+}

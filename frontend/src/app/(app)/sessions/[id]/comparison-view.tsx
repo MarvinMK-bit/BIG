@@ -12,8 +12,9 @@ import {
   questionLabel,
   type ScriptBlock,
 } from "@/lib/script";
-import type { QuestionResult, RunComparison } from "@/lib/types";
+import type { Feedback, QuestionResult, RunComparison } from "@/lib/types";
 import { graderCall, type GraderCall } from "@/lib/verdict";
+import { FeedbackToggle } from "./feedback-toggle";
 import { VerdictControl } from "./verdict-control";
 
 function Call({ name, call }: { name: string; call: GraderCall }) {
@@ -35,11 +36,16 @@ export function ComparisonView({
   blocks,
   schemeResults,
   llmResults,
+  feedbackByResult,
+  username,
 }: {
   comparison: RunComparison;
   blocks: ScriptBlock[];
   schemeResults: QuestionResult[];
   llmResults: QuestionResult[];
+  // Keyed by the mark scheme run's result id, which is what feedback targets
+  feedbackByResult: Record<string, Feedback[]>;
+  username: string;
 }) {
   const [onlyDisagreements, setOnlyDisagreements] = useState(false);
   const blockByKey = indexBlocks(blocks);
@@ -149,6 +155,14 @@ export function ComparisonView({
                     <Call name="Mark scheme" call={graderCall(scheme, q.human_verdict)} />
                     <Call name="LLM" call={graderCall(llm, q.human_verdict)} />
                   </p>
+                )}
+
+                {scheme && (
+                  <FeedbackToggle
+                    resultId={scheme.id}
+                    username={username}
+                    initialItems={feedbackByResult[scheme.id] ?? []}
+                  />
                 )}
               </li>
             );

@@ -3,8 +3,11 @@ import { LocalTime } from "@/components/local-time";
 import { StatusBadge } from "@/components/status-badge";
 import { backendGet } from "@/lib/backend";
 import { splitScript } from "@/lib/script";
+import { feedbackListPath } from "@/lib/types";
 import type {
+  Feedback,
   GradingRun,
+  Me,
   GradingSession,
   QuestionResult,
   RunComparison,
@@ -54,6 +57,21 @@ export default async function SessionPage(props: PageProps<"/sessions/[id]">) {
         )
       : null;
 
+  // Every question's thread up front, so the collapsed links can show their counts
+  const [me, feedback] = comparison && schemeRun
+    ? await Promise.all([
+        backendGet<Me>("/auth/me"),
+        Promise.all(
+          schemeRun.results.map((r) =>
+            backendGet<Feedback[]>(feedbackListPath({ kind: "result", id: r.id })),
+          ),
+        ),
+      ])
+    : [null, []];
+  const feedbackByResult = Object.fromEntries(
+    (schemeRun?.results ?? []).map((r, i) => [r.id, feedback[i] ?? []]),
+  );
+
   return (
     <main className="flex flex-col gap-6">
       <div>
@@ -101,7 +119,7 @@ export default async function SessionPage(props: PageProps<"/sessions/[id]">) {
         llmRun={llmRun}
       />
 
-      {comparison && schemeRun && llmRun && (
+      {comparison && schemeRun && llmRun && me && (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold">Compare</h2>
           <ComparisonView
@@ -109,6 +127,8 @@ export default async function SessionPage(props: PageProps<"/sessions/[id]">) {
             blocks={blocks}
             schemeResults={schemeRun.results}
             llmResults={llmRun.results}
+            feedbackByResult={feedbackByResult}
+            username={me.username}
           />
         </section>
       )}

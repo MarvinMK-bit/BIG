@@ -42,6 +42,10 @@ class FeedbackOut(BaseModel):
     author_context: str | None
     target_type: FeedbackTarget
     question_result_id: uuid.UUID | None
+    # Where a question-result target lives, so it can be linked to
+    session_id: uuid.UUID | None
+    question_number: str | None
+    sub_part: str | None
     mark_scheme_version: str | None
     parent_id: uuid.UUID | None
     # "In reply to 0001a"; the parent's body is left out, as the viewer may not be allowed to see it
@@ -54,6 +58,7 @@ class FeedbackOut(BaseModel):
 
     @classmethod
     def from_model(cls, feedback: Feedback) -> "FeedbackOut":
+        result = feedback.question_result
         return cls(
             id=feedback.id,
             public_ref=feedback.public_ref,
@@ -61,6 +66,9 @@ class FeedbackOut(BaseModel):
             author_context=feedback.author_context,
             target_type=feedback.target_type,
             question_result_id=feedback.question_result_id,
+            session_id=result.session_id if result else None,
+            question_number=result.question_number if result else None,
+            sub_part=result.sub_part if result else None,
             mark_scheme_version=feedback.mark_scheme_version,
             parent_id=feedback.parent_id,
             parent_public_ref=feedback.parent.public_ref if feedback.parent else None,

@@ -57,8 +57,12 @@ def ref_number(public_ref: str) -> str:
 
 
 def _select() -> Select[tuple[Feedback]]:
-    # Replies always come with their parent; the author is needed to show who wrote it
-    return select(Feedback).options(selectinload(Feedback.parent), selectinload(Feedback.author))
+    # Replies always come with their parent; the author and result say who wrote it and where
+    return select(Feedback).options(
+        selectinload(Feedback.parent),
+        selectinload(Feedback.author),
+        selectinload(Feedback.question_result),
+    )
 
 
 def _visible_to(viewer_id: UUID) -> ColumnElement[bool]:
