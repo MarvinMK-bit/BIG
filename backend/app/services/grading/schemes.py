@@ -11,6 +11,16 @@ VALID_MATCHERS: frozenset[str] = frozenset({"exact", "numeric"})
 PROCEDURE_MATCHER = "procedure"
 VALID_SOURCES: frozenset[str] = frozenset({"manual", "generated", "feedback-derived"})
 
+# BIG's mark codes for procedure questions, in the order they must appear; see docs/MARK-CODES.md.
+# A mark is declared by its code alone; the mark it earns is written after it: "T - 1", "T - 0".
+FIRST_STEP_CODE = "T"
+STEP_CODE = "M"
+ANSWER_CODE = "A"
+CONCLUSION_CODE = "D"
+MARK_CODES: tuple[str, ...] = (FIRST_STEP_CODE, STEP_CODE, ANSWER_CODE, CONCLUSION_CODE)
+MAX_STEP_MARKS = 4
+_ORDINALS = ("first", "second", "third", "fourth")
+
 _SCHEME_SUFFIXES = (".yaml", ".yml")
 
 
@@ -92,6 +102,52 @@ def _parse_mark(raw: Any, index: int, where: str) -> SchemeMark:
     return SchemeMark(id=mark_id, description=description, max_mark=max_mark)
 
 
+def check_mark_codes(codes: list[str], where: str) -> None:
+    """A procedure question's marks: T first and once, then 1 to MAX_STEP_MARKS M, then at most one
+    A, then at most one D. Raises ValueError naming the rule that was broken."""
+    for code in codes:
+        if code not in MARK_CODES:
+            raise ValueError(
+                f"{where} has unknown mark code {code!r}. Procedure questions use BIG's mark codes: "
+                f"{', '.join(MARK_CODES)}"
+            )
+    if not codes or codes[0] != FIRST_STEP_CODE:
+        raise ValueError(f"{where} must start with {FIRST_STEP_CODE}, the correct first step")
+    if codes.count(FIRST_STEP_CODE) != 1:
+        raise ValueError(f"{where} must have exactly one {FIRST_STEP_CODE}")
+    steps = codes.count(STEP_CODE)
+    if not 1 <= steps <= MAX_STEP_MARKS:
+        raise ValueError(
+            f"{where} must have between 1 and {MAX_STEP_MARKS} {STEP_CODE} marks, got {steps}"
+        )
+    for code in (ANSWER_CODE, CONCLUSION_CODE):
+        if codes.count(code) > 1:
+            raise ValueError(f"{where} may have at most one {code}")
+    for before, after in zip(codes, codes[1:]):
+        if MARK_CODES.index(after) < MARK_CODES.index(before):
+            raise ValueError(
+                f"{where} has {after} after {before}: marks must run in the order "
+                f"{' then '.join(MARK_CODES)}"
+            )
+
+
+def format_award(code: str, awarded: Decimal) -> str:
+    """How a mark reads once marked: its code, then the mark it earned. "T - 1", "M - 0"."""
+    return f"{code} - {awarded.normalize():f}"
+
+
+def mark_labels(codes: list[str]) -> list[str | None]:
+    """Tells repeated codes apart by position for output, e.g. "second M"; None where a code
+    appears once. The codes themselves are never renamed."""
+    seen: dict[str, int] = {}
+    labels: list[str | None] = []
+    for code in codes:
+        index = seen.get(code, 0)
+        seen[code] = index + 1
+        labels.append(f"{_ORDINALS[index]} {code}" if codes.count(code) > 1 else None)
+    return labels
+
+
 def _parse_procedure_fields(
     raw: dict[str, Any], max_mark: Decimal, where: str
 ) -> tuple[str, dict[str, Any], list[SchemeMark]]:
@@ -108,11 +164,7 @@ def _parse_procedure_fields(
         raise ValueError(f"{where} field 'marks' must be a non-empty list")
     marks = [_parse_mark(item, i, where) for i, item in enumerate(raw_marks, start=1)]
 
-    seen: set[str] = set()
-    for mark in marks:
-        if mark.id in seen:
-            raise ValueError(f"{where} has duplicate mark id {mark.id!r}")
-        seen.add(mark.id)
+    check_mark_codes([mark.id for mark in marks], where)
 
     total = sum((mark.max_mark for mark in marks), Decimal(0))
     if total != max_mark:

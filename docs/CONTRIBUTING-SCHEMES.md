@@ -9,6 +9,9 @@ Mark schemes come from two places:
 A scheme uploaded to a hosted instance lives only in that instance's database. It is **not**
 automatically added to the repository, so other instances and fresh deployments don't have it.
 
+Questions marked on their working (`matcher: procedure`) must use BIG's mark codes, in order:
+see [MARK-CODES.md](MARK-CODES.md).
+
 ## Moving an uploaded scheme into the repository
 
 An admin exports it and commits the file.

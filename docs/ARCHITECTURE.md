@@ -330,6 +330,10 @@ of questions with their maximum marks and expected answers. Matching is declared
 programmed — `exact`, `numeric`, and similar matcher names — so the vocabulary of what a
 scheme can express grows deliberately rather than by contributors writing arbitrary logic.
 
+Questions marked on their working rather than their answer name a procedure and award their
+marks under BIG's own mark codes — `T`, `M`, `A`, `D` — described in
+[MARK-CODES.md](MARK-CODES.md).
+
 **Schemes can be generated from marking guides.** Teachers already write marking guides for
 every set exam. Requiring them to re-express that work as YAML is a needless barrier, so BIG
 accepts a marking guide and produces a draft scheme from it.

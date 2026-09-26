@@ -1,10 +1,10 @@
 import enum
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Index, Numeric, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -17,6 +17,15 @@ if TYPE_CHECKING:
 class GraderType(str, enum.Enum):
     LLM = "llm"
     MARK_SCHEME = "mark_scheme"
+
+
+class MarkBreakdownItem(TypedDict):
+    """One mark point of a procedure-marked question: its code ("M") and the mark it earned."""
+
+    code: str
+    awarded: float
+    max_mark: float
+    reason: str
 
 
 class QuestionResult(Base):
@@ -51,6 +60,8 @@ class QuestionResult(Base):
     ocr_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Procedure questions only: each mark point in scheme order, so every M shows on its own
+    mark_breakdown: Mapped[list[MarkBreakdownItem] | None] = mapped_column(JSONB, nullable=True)
     is_correct_per_human: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # When the verdict was last set; None when there is no verdict, or it predates this column
     verdict_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

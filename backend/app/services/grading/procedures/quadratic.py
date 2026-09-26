@@ -23,19 +23,28 @@ coefficients or a discriminant with the right values, the product-sum pair,
 or x = value where every value is a root. Lines stating x = .. are allowed on
 either route; other lines must stay on the route chosen on line 2.
 
+Mark points use BIG's mark codes (docs/MARK-CODES.md), declared by code alone. Each is
+earned on its own line, and reads "T - 1" when earned and "T - 0" when not:
+  T  line 1: the equation identified and its coefficients extracted.
+  M  a correct factorisation or quadratic formula step, earned on line 2. A scheme may
+     declare up to four; the second is earned on line 3, and so on, until the answer
+     line. Each is earned or lost on its own. An M whose step never appears before the
+     answer is lost; A is still earned. Method lines beyond the scheme's M marks must
+     still be correct, but earn nothing.
+  A  the answer: the first line from line 3 on that states every root correctly, with
+     every line before it verified. Rational roots must be written as plain numbers
+     ("-2", "1/2", "0.5"), not left as an unsimplified expression. A line saying there
+     are no real roots is the answer when the discriminant is negative.
+  D  a concluding statement on a line after the answer, e.g. "the roots are 2 and 3".
+     Checked by pattern, not by a model: the line must contain every root's value and
+     one of CONCLUDING_WORDS. Awarded only when A's answer was stated correctly.
+
 Marking STOPS at the first incorrect step. Every mark from that point on is
 zero, including marks that would otherwise follow from the student's own
 working. This is deliberate, and stricter than UNEB follow-through marking,
 which would credit later working done correctly from an earlier slip. A
-correct final answer reached through incorrect working earns nothing.
-
-Mark points (default ids; a scheme renames them with params.mark_ids):
-  M1   correct equation identified and coefficients extracted (line 1)
-  M1b  correct method applied to the next step (line 2)
-  A1   both roots correct and stated, on the last line, with every step verified.
-       Rational roots must be written as plain numbers ("-2", "1/2", "0.5"),
-       not left as an unsimplified expression. A line saying there are no
-       real roots earns A1 when the discriminant is negative.
+correct final answer reached through incorrect working earns nothing. Lines
+after the answer must each be a correct step or the conclusion.
 
 Reading conventions: "±" is read as two branches; decimals are accepted when
 correctly rounded to the places written; a number written directly after "/"
@@ -61,13 +70,35 @@ from sympy.parsing.sympy_parser import (
 
 from app.services.grading.procedures.base import MarkAward, Procedure
 from app.services.grading.procedures.registry import register
-from app.services.grading.schemes import SchemeMark
+from app.services.grading.schemes import (
+    ANSWER_CODE,
+    CONCLUSION_CODE,
+    FIRST_STEP_CODE,
+    STEP_CODE,
+    SchemeMark,
+    check_mark_codes,
+)
 
 FORMULA = "quadratic formula"
 FACTORISATION = "product-sum (factorisation)"
 
-_ROLES = ("equation", "method", "answer")
-_DEFAULT_MARK_IDS: dict[str, str] = {"equation": "M1", "method": "M1b", "answer": "A1"}
+# A D line needs one of these, as a whole word, ignoring case. Extend the list as needed.
+CONCLUDING_WORDS: tuple[str, ...] = (
+    "root",
+    "roots",
+    "solution",
+    "solutions",
+    "therefore",
+    "hence",
+    "thus",
+    "answer",
+    "so",
+)
+_CONCLUDING_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(word) for word in CONCLUDING_WORDS) + r")\b", re.IGNORECASE
+)
+# Words in a conclusion that aren't mathematics: removed before its values are read
+_PROSE_RE = re.compile(r"[A-Za-z]{2,}")
 
 _STOP_NOTE = (
     "Marking stops at the first incorrect step: no later mark is awarded, even for "
@@ -463,6 +494,44 @@ def _answer_problem(line: _Line, equation: _Equation) -> str | None:
     return None
 
 
+_NO_CONCLUDING_WORD = "has no concluding word"
+
+
+def _conclusion_problem(line: str, equation: _Equation) -> str | None:
+    """Why the line isn't a concluding statement, or None when it is: it must hold a
+    concluding word and the value of every root (or say there are no real roots)."""
+    if not _CONCLUDING_RE.search(line.replace("∴", " therefore ")):
+        return _NO_CONCLUDING_WORD
+    text = _normalise(line)
+    if "no real" in text.casefold():
+        if equation.discriminant >= 0:
+            return "says there are no real roots, but the equation has real roots"
+        return None
+    # Prose is dropped, keeping sqrt; what's left is read clause by clause
+    text = _PROSE_RE.sub(lambda m: m.group(0) if m.group(0) == "sqrt" else ";", text)
+    found: list[tuple[sympy.Expr, float]] = []
+    for clause in _CLAUSE_SPLIT_RE.split(text):
+        value_text = clause.split("=")[-1].strip()
+        if not value_text:
+            continue
+        try:
+            values, _ = _values(value_text, equation)
+        except _StepError:
+            continue
+        found.extend((value, _tolerance(value_text)) for value in values if not value.free_symbols)
+    missing = [
+        root for root in equation.roots if not any(_equal(v, root, tol) for v, tol in found)
+    ]
+    if missing:
+        shown = ", ".join(_show(root) for root in missing)
+        return f"does not give the root{'s' if len(missing) > 1 else ''} {shown}"
+    return None
+
+
+# A mark's (earned, reason)
+_Outcome = tuple[bool, str]
+
+
 @register
 class QuadraticProcedure(Procedure):
     """Marks any quadratic equation line by line; see the module docstring."""
@@ -472,97 +541,93 @@ class QuadraticProcedure(Procedure):
     def grade(
         self, working: list[str], params: dict[str, Any], marks: list[SchemeMark]
     ) -> list[MarkAward]:
-        mark_ids = self._mark_ids(params, marks)
-        by_id = {mark.id: mark for mark in marks}
+        if params:
+            raise ValueError(f"quadratic procedure has no parameter(s) {', '.join(sorted(params))}")
+        codes = [mark.id for mark in marks]
+        check_mark_codes(codes, "quadratic procedure scheme")
         lines = [line.strip() for line in working if line.strip()]
-        outcomes = self._mark(lines)
+        outcomes = self._mark(lines, codes)
         return [
-            MarkAward(
-                mark_id=mark_ids[role],
-                awarded=by_id[mark_ids[role]].max_mark if earned else Decimal(0),
-                reason=reason,
-            )
-            for role, (earned, reason) in outcomes.items()
+            MarkAward(mark_id=mark.id, awarded=mark.max_mark if earned else Decimal(0), reason=reason)
+            for mark, (earned, reason) in zip(marks, outcomes)
         ]
 
     @staticmethod
-    def _mark_ids(params: dict[str, Any], marks: list[SchemeMark]) -> dict[str, str]:
-        unknown = set(params) - {"mark_ids"}
-        if unknown:
-            raise ValueError(f"quadratic procedure has no parameter(s) {', '.join(sorted(unknown))}")
-        overrides = params.get("mark_ids") or {}
-        if not isinstance(overrides, dict) or set(overrides) - set(_ROLES):
-            raise ValueError(
-                f"quadratic procedure param 'mark_ids' must map some of {', '.join(_ROLES)} to mark ids"
-            )
-        mark_ids = {role: str(overrides.get(role, _DEFAULT_MARK_IDS[role])) for role in _ROLES}
-        if len(set(mark_ids.values())) != len(_ROLES):
-            raise ValueError("quadratic procedure mark ids must be distinct")
-        scheme_ids = {mark.id for mark in marks}
-        if scheme_ids != set(mark_ids.values()):
-            raise ValueError(
-                f"quadratic procedure awards marks {', '.join(mark_ids.values())} but the scheme "
-                f"defines {', '.join(mark.id for mark in marks)}"
-            )
-        return mark_ids
+    def _mark(lines: list[str], codes: list[str]) -> list[_Outcome]:
+        """Each mark's (earned, reason), in the scheme's order."""
+        outcomes: list[_Outcome | None] = [None] * len(codes)
 
-    @staticmethod
-    def _mark(lines: list[str]) -> dict[str, tuple[bool, str]]:
-        """Each role's (earned, reason). Line 1 carries the equation mark, line 2 the method
-        mark, and the answer mark needs every line through the last to be correct."""
+        def unfilled(code: str | None = None) -> list[int]:
+            return [
+                i for i, c in enumerate(codes) if outcomes[i] is None and (code is None or c == code)
+            ]
+
+        def fill(code: str | None, outcome: _Outcome) -> None:
+            for i in unfilled(code):
+                outcomes[i] = outcome
+
+        def result() -> list[_Outcome]:
+            assert all(outcome is not None for outcome in outcomes)
+            return [outcome for outcome in outcomes if outcome is not None]
+
         if not lines:
-            return {role: (False, "Not awarded: no working written.") for role in _ROLES}
+            fill(None, (False, "Not awarded: no working written."))
+            return result()
 
         def at(number: int) -> str:
             return f"Line {number} '{lines[number - 1]}'"
 
-        def stopped(number: int, why: str) -> dict[str, tuple[bool, str]]:
+        def stopped(number: int, why: str) -> list[_Outcome]:
             # Errors quote the text they are about; don't quote a whole line twice
             why = why.removeprefix(f"'{_normalise(lines[number - 1])}' ")
+            answer_lost = bool(unfilled(ANSWER_CODE))
+            remaining = unfilled()
+            # The first mark still open is the one this line would have earned
+            outcomes[remaining[0]] = (False, f"{at(number)} {why}. {_STOP_NOTE}")
             later = f"Not awarded: marking stopped at line {number} '{lines[number - 1]}' ({why})."
-            lost_here = min(number, 3) - 1  # the role this line would have earned
-            outcomes = dict(done)
-            for index, role in enumerate(_ROLES):
-                if role in outcomes:
-                    continue
-                if index == lost_here:
-                    outcomes[role] = (False, f"{at(number)} {why}. {_STOP_NOTE}")
-                else:
-                    outcomes[role] = (False, f"{later} {_STOP_NOTE}")
+            fill(None, (False, f"{later} {_STOP_NOTE}"))
             # Line 1 failing leaves no equation to check an answer against
-            if 1 < number < len(lines) and final_answer_is_correct():
-                earned, reason = outcomes["answer"]
-                outcomes["answer"] = (
-                    earned,
-                    f"{reason} {at(len(lines))} states the correct roots, but a correct answer "
-                    "reached through incorrect working earns nothing.",
-                )
-            return outcomes
+            if answer_lost and number > 1 and later_answer_is_correct(number):
+                for i in [i for i, c in enumerate(codes) if c == ANSWER_CODE]:
+                    earned, reason = outcomes[i] or (False, "")
+                    outcomes[i] = (
+                        earned,
+                        f"{reason} A later line states the correct roots, but a correct answer "
+                        "reached through incorrect working earns nothing.",
+                    )
+            return result()
 
-        def final_answer_is_correct() -> bool:
-            try:
-                return _answer_problem(_read_line(lines[-1], equation, ""), equation) is None
-            except _StepError:
-                return False
+        def later_answer_is_correct(number: int) -> bool:
+            for line in lines[number:]:
+                try:
+                    if _answer_problem(_read_line(line, equation, ""), equation) is None:
+                        return True
+                except _StepError:
+                    continue
+            return False
 
-        done: dict[str, tuple[bool, str]] = {}
         try:
             equation = _read_equation(lines[0])
         except _StepError as error:
             return stopped(1, str(error))
-        done["equation"] = (
-            True,
-            f"{at(1)}: equation in {equation.variable} identified, "
-            f"a = {_show(equation.a)}, b = {_show(equation.b)}, c = {_show(equation.c)}.",
+        fill(
+            FIRST_STEP_CODE,
+            (
+                True,
+                f"{at(1)}: equation in {equation.variable} identified, "
+                f"a = {_show(equation.a)}, b = {_show(equation.b)}, c = {_show(equation.c)}.",
+            ),
         )
 
         if len(lines) == 1:
-            nothing = "Not awarded: no working after the equation on line 1."
-            return {**done, "method": (False, nothing), "answer": (False, nothing)}
+            fill(None, (False, "Not awarded: no working after the equation on line 1."))
+            return result()
 
+        # Method lines, until the first line from line 3 on that states every root
         route: str | None = None
         tail = ""
         last: _Line | None = None
+        answer_line: int | None = None
         for number in range(2, len(lines) + 1):
             try:
                 last = _read_line(lines[number - 1], equation, tail)
@@ -572,21 +637,67 @@ class QuadraticProcedure(Procedure):
                 route = last.route or last.route_hint
                 if route is None:
                     return stopped(number, "does not show a product-sum or quadratic formula step")
-                done["method"] = (True, f"{at(2)}: correct {route} step.")
             elif last.route is not None and last.route != route:
                 return stopped(
                     number, f"switches to the {last.route} route after line 2 used the {route}"
                 )
             tail = last.tail
+            if number >= 3 and _answer_problem(last, equation) is None:
+                answer_line = number
+                break
+            steps = unfilled(STEP_CODE)
+            if steps:
+                outcomes[steps[0]] = (True, f"{at(number)}: correct {route} step.")
 
         assert last is not None
-        final = at(len(lines))
-        problem = _answer_problem(last, equation)
-        if problem is not None:
-            done["answer"] = (False, f"Not awarded: every step is correct, but {final} {problem}.")
-        elif last.no_real_roots:
-            done["answer"] = (True, f"{final}: correctly states there are no real roots.")
+        if answer_line is None:
+            final = at(len(lines))
+            fill(STEP_CODE, (False, f"Not awarded: no further {route} step shown."))
+            problem = _answer_problem(last, equation) or "does not state the roots on a line after line 2"
+            fill(ANSWER_CODE, (False, f"Not awarded: every step is correct, but {final} {problem}."))
+            fill(
+                CONCLUSION_CODE,
+                (
+                    False,
+                    "Not awarded: a concluding statement counts only once the roots are stated correctly.",
+                ),
+            )
+            return result()
+
+        fill(
+            STEP_CODE,
+            (False, f"Not awarded: no further {route} step before the answer on line {answer_line}."),
+        )
+        answer_at = at(answer_line)
+        if last.no_real_roots:
+            fill(ANSWER_CODE, (True, f"{answer_at}: correctly states there are no real roots."))
         else:
             stated = ", ".join(f"{equation.variable} = {_show(root)}" for root in equation.roots)
-            done["answer"] = (True, f"{final}: roots {stated} stated, every step verified.")
-        return done
+            fill(ANSWER_CODE, (True, f"{answer_at}: roots {stated} stated, every step verified."))
+
+        if not unfilled(CONCLUSION_CODE):
+            return result()
+        # After the answer, each line is either the conclusion or another correct step
+        for number in range(answer_line + 1, len(lines) + 1):
+            line = lines[number - 1]
+            problem = _conclusion_problem(line, equation)
+            if problem is None:
+                gives = "that there are no real roots" if last.no_real_roots else "the roots"
+                fill(CONCLUSION_CODE, (True, f"{at(number)}: concluding statement giving {gives}."))
+                return result()
+            if problem != _NO_CONCLUDING_WORD:
+                return stopped(number, problem)
+            try:
+                tail = _read_line(line, equation, tail).tail
+            except _StepError as error:
+                return stopped(number, str(error))
+        words = ", ".join(f"'{word}'" for word in CONCLUDING_WORDS)
+        fill(
+            CONCLUSION_CODE,
+            (
+                False,
+                f"Not awarded: no concluding statement after the answer on line {answer_line}. "
+                f"It must give the roots with a concluding word ({words}).",
+            ),
+        )
+        return result()

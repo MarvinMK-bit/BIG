@@ -72,7 +72,18 @@ export type QuestionResult = {
   confidence: number | null;
   ocr_confidence: number | null;
   reasoning: string | null;
+  // One entry per mark point, in scheme order; only for procedure-marked questions
+  mark_breakdown: MarkBreakdownItem[] | null;
   created_at: string;
+};
+
+// A mark point earned or lost, e.g. { code: "M", awarded: 0, max_mark: 1 }, shown as "M - 0".
+// The code never includes the mark. See docs/MARK-CODES.md.
+export type MarkBreakdownItem = {
+  code: string; // "T" | "M" | "A" | "D"
+  awarded: number;
+  max_mark: number;
+  reason: string;
 };
 
 export type GradingRun = {

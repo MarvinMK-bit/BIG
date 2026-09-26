@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.grading_session import GradingSession
-from app.models.question_result import GraderType, QuestionResult
+from app.models.question_result import GraderType, MarkBreakdownItem, QuestionResult
 from app.services.grading.matchers import MATCHERS
 from app.services.grading.errors import NoQuestionMarkersError
 from app.services.grading.procedures import get_procedure
@@ -14,7 +14,13 @@ from app.services.grading.parser import (
     parse_answers,
     parse_lines_as_questions,
 )
-from app.services.grading.schemes import PROCEDURE_MATCHER, MarkScheme, SchemeQuestion
+from app.services.grading.schemes import (
+    PROCEDURE_MATCHER,
+    MarkScheme,
+    SchemeQuestion,
+    format_award,
+    mark_labels,
+)
 
 _QuestionKey = tuple[str, str | None]
 
@@ -37,7 +43,9 @@ def _expected_for(question: SchemeQuestion) -> str | Decimal:
     return str(question.answer)
 
 
-def _grade_procedure(question: SchemeQuestion, parsed: ParsedAnswer) -> tuple[Decimal, str]:
+def _grade_procedure(
+    question: SchemeQuestion, parsed: ParsedAnswer
+) -> tuple[Decimal, str, list[MarkBreakdownItem]]:
     label = _label(question)
     if question.procedure is None:
         raise ValueError(f"Question {label} uses the procedure matcher but names no procedure")
@@ -48,38 +56,67 @@ def _grade_procedure(question: SchemeQuestion, parsed: ParsedAnswer) -> tuple[De
 
     working = [line.strip() for line in parsed.working.splitlines() if line.strip()]
     awards = procedure.grade(working, question.params, question.marks)
-    max_by_id = {mark.id: mark.max_mark for mark in question.marks}
+    if [award.mark_id for award in awards] != [mark.id for mark in question.marks]:
+        raise ValueError(f"Question {label}: the {procedure.name} procedure did not award the scheme's marks")
+    # Matched by position: M can appear more than once
+    pairs = list(zip(question.marks, awards))
     mark = sum((award.awarded for award in awards), Decimal(0))
+    labels = mark_labels([award.mark_id for award in awards])
     outcomes = "\n".join(
-        f"{award.mark_id} {award.awarded}/{max_by_id[award.mark_id]}: {award.reason}"
-        for award in awards
+        f"{format_award(award.mark_id, award.awarded)}{f' ({label})' if label else ''}: {award.reason}"
+        for award, label in zip(awards, labels)
     )
-    return mark, f"Marked by the {procedure.name} procedure.\n{outcomes}"
+    breakdown: list[MarkBreakdownItem] = [
+        {
+            "code": award.mark_id,
+            "awarded": float(award.awarded),
+            "max_mark": float(scheme_mark.max_mark),
+            "reason": award.reason,
+        }
+        for scheme_mark, award in pairs
+    ]
+    return mark, f"Marked by the {procedure.name} procedure.\n{outcomes}", breakdown
+
+
+def _unearned(question: SchemeQuestion, reason: str) -> list[MarkBreakdownItem]:
+    return [
+        {"code": mark.id, "awarded": 0.0, "max_mark": float(mark.max_mark), "reason": reason}
+        for mark in question.marks
+    ]
 
 
 def _grade_question(
     question: SchemeQuestion, parsed: ParsedAnswer | None
-) -> tuple[Decimal, str]:
+) -> tuple[Decimal, str, list[MarkBreakdownItem] | None]:
+    """The mark, the reasoning, and for procedure questions the outcome of each mark point."""
     label = _label(question)
+    procedure = question.matcher == PROCEDURE_MATCHER
     if parsed is None:
-        return Decimal(0), f"No answer found for question {label}."
-    if question.matcher == PROCEDURE_MATCHER:
+        reason = f"No answer found for question {label}."
+        return Decimal(0), reason, _unearned(question, reason) if procedure else None
+    if procedure:
         if not parsed.working:
-            return Decimal(0), f"Question {label} has no working written."
+            reason = f"Question {label} has no working written."
+            return Decimal(0), reason, _unearned(question, reason)
         return _grade_procedure(question, parsed)
     if not parsed.raw_answer:
-        return Decimal(0), f"Question {label} has no answer written."
+        return Decimal(0), f"Question {label} has no answer written.", None
 
     matcher = MATCHERS.get(question.matcher)
     if matcher is None:
         raise ValueError(f"Question {label} has unknown matcher {question.matcher!r}")
 
     if matcher(_expected_for(question), parsed.raw_answer):
-        return question.max_mark, f"Correct: answered {parsed.raw_answer!r} ({question.matcher} match)."
+        return (
+            question.max_mark,
+            f"Correct: answered {parsed.raw_answer!r} ({question.matcher} match).",
+            None,
+        )
     return (
         Decimal(0),
         f"Incorrect: answered {parsed.raw_answer!r}, expected {question.answer} "
         f"({question.matcher} match).",
+        None,
     )
 
 
@@ -108,7 +145,7 @@ async def grade_with_scheme(
     results: list[QuestionResult] = []
     for question in scheme.questions:
         parsed = parsed_by_key.get(_key(question.number, question.sub_part))
-        mark, reasoning = _grade_question(question, parsed)
+        mark, reasoning, breakdown = _grade_question(question, parsed)
         results.append(
             QuestionResult(
                 owner_id=session.owner_id,
@@ -124,6 +161,7 @@ async def grade_with_scheme(
                 confidence=1.0,
                 ocr_confidence=session.ocr_confidence,
                 reasoning=reasoning,
+                mark_breakdown=breakdown,
             )
         )
 

@@ -7,18 +7,22 @@ description: >-
   The scheme carries no fixed equation: it reads the equation from the student's
   first line, so it marks ANY quadratic ax^2 + bx + c = 0. Either the product-sum
   (factorisation) or quadratic formula route is accepted, decided by the student's
-  second line, and every line is checked algebraically. Marking stops at the first
+  second line, and every line is checked algebraically. Marks use BIG's mark codes:
+  T for the first step, M for the working step, A for the answer and D for the
+  concluding statement. Marking stops at the first
   incorrect step and nothing after it is credited, not even a correct final answer.
   This is deliberately stricter than UNEB follow-through marking.
 questions:
   - number: "1"
-    max_mark: 3
+    max_mark: 4
     matcher: procedure
     procedure: quadratic
     marks:
-      - id: M1
-        description: Correct equation identified and coefficients extracted
-      - id: M1b
-        description: Correct method applied to the next step
-      - id: A1
-        description: Both roots correct and stated
+      - id: T
+        description: Equation identified and coefficients extracted
+      - id: M
+        description: Correct factorisation or quadratic formula step
+      - id: A
+        description: Both roots stated correctly, e.g. "x = 2, x = 3"
+      - id: D
+        description: A concluding statement, e.g. "the roots are 2 and 3"

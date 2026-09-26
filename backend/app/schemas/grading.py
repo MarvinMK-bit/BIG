@@ -25,6 +25,13 @@ class GradingSessionOut(BaseModel):
     completed_at: datetime | None
 
 
+class MarkBreakdownOut(BaseModel):
+    code: str
+    awarded: float
+    max_mark: float
+    reason: str
+
+
 class QuestionResultOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -39,6 +46,8 @@ class QuestionResultOut(BaseModel):
     confidence: float | None
     ocr_confidence: float | None
     reasoning: str | None
+    # One entry per mark point, in scheme order; None unless a procedure marked the question
+    mark_breakdown: list[MarkBreakdownOut] | None
     created_at: datetime
 
 
