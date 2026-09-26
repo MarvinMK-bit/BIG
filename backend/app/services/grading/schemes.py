@@ -19,6 +19,13 @@ ANSWER_CODE = "A"
 CONCLUSION_CODE = "D"
 MARK_CODES: tuple[str, ...] = (FIRST_STEP_CODE, STEP_CODE, ANSWER_CODE, CONCLUSION_CODE)
 MAX_STEP_MARKS = 4
+# What each code is for, in words that give away nothing about any particular question
+MARK_CODE_MEANINGS: dict[str, str] = {
+    FIRST_STEP_CODE: "a correct first step",
+    STEP_CODE: "a subsequent correct step",
+    ANSWER_CODE: "the answer stated",
+    CONCLUSION_CODE: "a concluding statement",
+}
 _ORDINALS = ("first", "second", "third", "fourth")
 
 _SCHEME_SUFFIXES = (".yaml", ".yml")

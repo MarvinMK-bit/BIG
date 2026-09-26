@@ -1,4 +1,4 @@
-import type { QuestionResult } from "./types";
+import type { MarkBreakdownItem, QuestionResult } from "./types";
 
 // Same question markers as the backend parser (backend/app/services/grading/parser.py) — keep the
 // two in step. A marker is a line holding nothing but the marker:
@@ -177,4 +177,33 @@ export function summarise(items: AnnotatedItem[]): Summary {
 // Avoid float noise like 0.30000000000000004 in displayed totals.
 export function formatMark(n: number): string {
   return String(Math.round(n * 100) / 100);
+}
+
+const ORDINALS = ["first", "second", "third", "fourth"];
+
+// "second M" where a code repeats, so marks are told apart by position; the code is never renamed.
+export function markLabels(items: { code: string }[]): (string | null)[] {
+  const seen = new Map<string, number>();
+  return items.map(({ code }) => {
+    const index = seen.get(code) ?? 0;
+    seen.set(code, index + 1);
+    const repeated = items.filter((item) => item.code === code).length > 1;
+    return repeated ? `${ORDINALS[index] ?? `#${index + 1}`} ${code}` : null;
+  });
+}
+
+// A mark as marked: its code, then what it earned. "T - 1", "M - 0".
+export function formatAward(item: MarkBreakdownItem): string {
+  return `${item.code} - ${formatMark(item.awarded)}`;
+}
+
+export function markEarned(item: MarkBreakdownItem): boolean {
+  return item.awarded >= item.max_mark;
+}
+
+// Both results broken down into the same codes in the same order, so they can be set side by side.
+export function sameMarkStructure(a: QuestionResult | null, b: QuestionResult | null): boolean {
+  const x = a?.mark_breakdown;
+  const y = b?.mark_breakdown;
+  return !!x?.length && !!y?.length && x.length === y.length && x.every((m, i) => m.code === y[i].code);
 }

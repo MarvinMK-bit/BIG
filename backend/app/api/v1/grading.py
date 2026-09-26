@@ -20,6 +20,7 @@ from app.schemas.grading import (
     GraderAccuracyOut,
     GradingRunOut,
     GradingSessionOut,
+    LLMGradeRequest,
     QuestionResultOut,
     RunComparisonOut,
     SchemeGradeRequest,
@@ -364,6 +365,7 @@ async def grade_scheme(
 @router.post("/sessions/{session_id}/grade/llm", response_model=SchemeGradeResponse)
 async def grade_llm(
     session_id: UUID,
+    body: LLMGradeRequest | None = None,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> SchemeGradeResponse:
@@ -385,8 +387,17 @@ async def grade_llm(
             detail="LLM grading is unavailable: ANTHROPIC_API_KEY is not configured on the server",
         )
 
+    scheme = None
+    if body is not None and body.scheme_version is not None:
+        scheme = await resolve_scheme(session, body.scheme_version, user.id)
+        if scheme is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Mark scheme {body.scheme_version!r} not found",
+            )
+
     grading_run_id = uuid.uuid4()
-    results = await grade_with_llm(grading_session, session, grading_run_id)
+    results = await grade_with_llm(grading_session, session, grading_run_id, scheme=scheme)
     await session.commit()
 
     return SchemeGradeResponse(

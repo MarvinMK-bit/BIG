@@ -1,5 +1,6 @@
 import json
 import re
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
@@ -9,7 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.grading_session import GradingSession
-from app.models.question_result import GraderType, QuestionResult
+from app.models.question_result import GraderType, MarkBreakdownItem, QuestionResult
+from app.services.grading.deterministic import QuestionKey, question_key
+from app.services.grading.schemes import (
+    MARK_CODE_MEANINGS,
+    PROCEDURE_MATCHER,
+    MarkScheme,
+    format_award,
+    mark_labels,
+)
 
 MAX_OUTPUT_TOKENS = 16000
 
@@ -39,6 +48,78 @@ this shape:
 question or sub-part, in the order they appear in the script.
 """
 
+# Appended to SYSTEM_PROMPT when a scheme is supplied. The structure below it carries question
+# numbers, total marks and mark codes only: never a scheme's answers, params, mark descriptions
+# or procedure, so the model's judgement stays independent of the scheme grader's.
+ALIGNED_PROMPT = """
+Mark structure
+--------------
+This script is also being marked by another grader. So that the two sets of marks can be \
+compared, grade exactly the questions listed below, no more and no fewer, and use the total \
+marks given as max_mark instead of any printed on the paper. Return an entry for every listed \
+question, even one the student did not answer.
+
+The structure tells you how many marks there are and what each is for. It does not tell you \
+the answers, and nothing in it is a hint about them. Work out the mathematics yourself and \
+judge the student's working independently. You may disagree with the other grader; you \
+have not seen its marks and should not guess at them.
+
+Where a question lists mark codes, award each code in the order given, each 1 (earned) or \
+0 (not earned), with a one-sentence reason. The codes mean:
+{meanings}
+
+For those questions, give "marks" instead of "mark_awarded" and "max_mark":
+
+{{"number": "1", "sub_part": null, "extracted_answer": "...", "marks": \
+[{{"code": "T", "awarded": 1, "reason": "..."}}, {{"code": "M", "awarded": 0, "reason": "..."}}], \
+"confidence": 0.9, "reasoning": "..."}}
+
+Codes may repeat (e.g. two M marks); list each separately, in order. Questions without codes \
+take "mark_awarded" and "max_mark" as usual.
+
+Questions:
+{questions}
+"""
+
+
+@dataclass
+class _ExpectedQuestion:
+    """What an aligned run asked for on one question."""
+
+    label: str
+    max_mark: Decimal
+    # Mark codes in order, with each mark's worth; empty for a question marked as a whole
+    codes: list[str]
+    mark_values: list[Decimal]
+
+
+def _expected_questions(scheme: MarkScheme) -> dict[QuestionKey, _ExpectedQuestion]:
+    expected: dict[QuestionKey, _ExpectedQuestion] = {}
+    for question in scheme.questions:
+        label = question.number + (f"({question.sub_part.strip('()')})" if question.sub_part else "")
+        coded = question.matcher == PROCEDURE_MATCHER
+        expected[question_key(question.number, question.sub_part)] = _ExpectedQuestion(
+            label=label,
+            max_mark=question.max_mark,
+            codes=[mark.id for mark in question.marks] if coded else [],
+            mark_values=[mark.max_mark for mark in question.marks] if coded else [],
+        )
+    return expected
+
+
+def _system_prompt(expected: dict[QuestionKey, _ExpectedQuestion] | None) -> str:
+    if expected is None:
+        return SYSTEM_PROMPT
+    lines = []
+    for item in expected.values():
+        line = f"- Question {item.label}: {item.max_mark.normalize():f} marks"
+        if item.codes:
+            line += f"; mark codes, in order: {', '.join(item.codes)}"
+        lines.append(line)
+    meanings = "\n".join(f"- {code}: {meaning}" for code, meaning in MARK_CODE_MEANINGS.items())
+    return SYSTEM_PROMPT + ALIGNED_PROMPT.format(meanings=meanings, questions="\n".join(lines))
+
+
 _FENCE_RE = re.compile(r"^\s*```[a-zA-Z0-9_-]*[ \t]*\n?(.*?)\n?[ \t]*```\s*$", re.DOTALL)
 
 
@@ -67,7 +148,58 @@ def _optional_str(value: Any, field: str) -> str | None:
     return value.strip() or None
 
 
-def _build_result(item: Any, index: int, session: GradingSession, grading_run_id: UUID) -> QuestionResult:
+def _coded_marks(
+    raw_marks: Any, expected: _ExpectedQuestion, where: str
+) -> tuple[Decimal, list[MarkBreakdownItem]]:
+    """The model's per-code awards, checked against the codes asked for: same codes, same order,
+    each 1 or 0. An earned code is worth that mark's value in the scheme."""
+    if not isinstance(raw_marks, list):
+        raise ValueError(f'{where} must give "marks" as a list for codes {", ".join(expected.codes)}')
+    codes = [m.get("code") if isinstance(m, dict) else None for m in raw_marks]
+    if codes != expected.codes:
+        raise ValueError(
+            f"{where} gave mark codes {codes} but question {expected.label} asked for {expected.codes}"
+        )
+    breakdown: list[MarkBreakdownItem] = []
+    total = Decimal(0)
+    for position, (raw, value) in enumerate(zip(raw_marks, expected.mark_values)):
+        awarded = raw.get("awarded")
+        if isinstance(awarded, bool) or awarded not in (0, 1):
+            raise ValueError(f"{where}.marks[{position}].awarded must be 1 or 0, got {awarded!r}")
+        reason = _optional_str(raw.get("reason"), f"{where}.marks[{position}].reason")
+        if reason is None:
+            raise ValueError(f"{where}.marks[{position}] is missing a reason")
+        if awarded:
+            total += value
+        breakdown.append(
+            {
+                "code": raw["code"],
+                "awarded": float(value) if awarded else 0.0,
+                "max_mark": float(value),
+                "reason": reason,
+            }
+        )
+    return total, breakdown
+
+
+def _coded_reasoning(reasoning: str | None, breakdown: list[MarkBreakdownItem]) -> str:
+    """The model's summary, then one line per mark in the same form the scheme grader uses."""
+    labels = mark_labels([item["code"] for item in breakdown])
+    lines = [
+        f"{format_award(item['code'], Decimal(str(item['awarded'])))}"
+        f"{f' ({label})' if label else ''}: {item['reason']}"
+        for item, label in zip(breakdown, labels)
+    ]
+    return "\n".join(([reasoning] if reasoning else []) + lines)
+
+
+def _build_result(
+    item: Any,
+    index: int,
+    session: GradingSession,
+    grading_run_id: UUID,
+    expected: dict[QuestionKey, _ExpectedQuestion] | None = None,
+) -> QuestionResult:
     where = f"results[{index}]"
     if not isinstance(item, dict):
         raise ValueError(f"{where} must be an object, got {item!r}")
@@ -77,13 +209,31 @@ def _build_result(item: Any, index: int, session: GradingSession, grading_run_id
         number = str(number)
     if not isinstance(number, str) or not number.strip():
         raise ValueError(f"{where} is missing a question number")
+    sub_part = _optional_str(item.get("sub_part"), f"{where}.sub_part")
+    reasoning = _optional_str(item.get("reasoning"), f"{where}.reasoning")
 
-    max_mark = _decimal(item.get("max_mark"), f"{where}.max_mark")
-    mark_awarded = _decimal(item.get("mark_awarded"), f"{where}.mark_awarded")
-    if max_mark <= 0:
-        raise ValueError(f"{where}.max_mark must be greater than zero, got {max_mark}")
-    if not 0 <= mark_awarded <= max_mark:
-        raise ValueError(f"{where}.mark_awarded must be between 0 and max_mark, got {mark_awarded}")
+    asked = None
+    if expected is not None:
+        asked = expected.get(question_key(number, sub_part))
+        if asked is None:
+            raise ValueError(f"{where} grades question {number!r}, which was not asked for")
+
+    breakdown: list[MarkBreakdownItem] | None = None
+    if asked is not None and asked.codes:
+        max_mark = asked.max_mark
+        mark_awarded, breakdown = _coded_marks(item.get("marks"), asked, where)
+        reasoning = _coded_reasoning(reasoning, breakdown)
+    else:
+        max_mark = _decimal(item.get("max_mark"), f"{where}.max_mark")
+        mark_awarded = _decimal(item.get("mark_awarded"), f"{where}.mark_awarded")
+        if max_mark <= 0:
+            raise ValueError(f"{where}.max_mark must be greater than zero, got {max_mark}")
+        if not 0 <= mark_awarded <= max_mark:
+            raise ValueError(f"{where}.mark_awarded must be between 0 and max_mark, got {mark_awarded}")
+        if asked is not None and max_mark != asked.max_mark:
+            raise ValueError(
+                f"{where}.max_mark is {max_mark} but question {asked.label} is worth {asked.max_mark}"
+            )
 
     confidence: float | None = None
     if item.get("confidence") is not None:
@@ -96,7 +246,7 @@ def _build_result(item: Any, index: int, session: GradingSession, grading_run_id
         grading_run_id=grading_run_id,
         session_id=session.id,
         question_number=number.strip(),
-        sub_part=_optional_str(item.get("sub_part"), f"{where}.sub_part"),
+        sub_part=sub_part,
         extracted_answer=_optional_str(item.get("extracted_answer"), f"{where}.extracted_answer"),
         mark_awarded=mark_awarded,
         max_mark=max_mark,
@@ -104,12 +254,16 @@ def _build_result(item: Any, index: int, session: GradingSession, grading_run_id
         mark_scheme_version=None,
         confidence=confidence,
         ocr_confidence=session.ocr_confidence,
-        reasoning=_optional_str(item.get("reasoning"), f"{where}.reasoning"),
+        reasoning=reasoning,
+        mark_breakdown=breakdown,
     )
 
 
 def _parse_response(
-    raw: str, session: GradingSession, grading_run_id: UUID
+    raw: str,
+    session: GradingSession,
+    grading_run_id: UUID,
+    expected: dict[QuestionKey, _ExpectedQuestion] | None = None,
 ) -> list[QuestionResult]:
     try:
         data = json.loads(_strip_fences(raw))
@@ -121,10 +275,19 @@ def _parse_response(
             raise ValueError('top level must be an object with a "results" list')
         if not data["results"]:
             raise ValueError('"results" is empty')
-        return [
-            _build_result(item, index, session, grading_run_id)
+        results = [
+            _build_result(item, index, session, grading_run_id, expected)
             for index, item in enumerate(data["results"])
         ]
+        if expected is not None:
+            graded = [question_key(r.question_number, r.sub_part) for r in results]
+            repeated = {expected[key].label for key in graded if graded.count(key) > 1}
+            if repeated:
+                raise ValueError(f"questions graded more than once: {', '.join(sorted(repeated))}")
+            missing = [item.label for key, item in expected.items() if key not in graded]
+            if missing:
+                raise ValueError(f"questions asked for but not graded: {', '.join(missing)}")
+        return results
     except ValueError as exc:
         raise ValueError(f"LLM grader response is malformed: {exc}. Raw response:\n{raw}") from exc
 
@@ -134,18 +297,23 @@ async def grade_with_llm(
     db: AsyncSession,
     grading_run_id: UUID,
     model: str | None = None,
+    scheme: MarkScheme | None = None,
 ) -> list[QuestionResult]:
+    """Grade the session's OCR text with the model. With a scheme, the model is told each
+    question's total marks and mark codes, but never the scheme's answers, so its marks line up
+    with the scheme grader's while its judgement stays its own."""
     settings = get_settings()
     if not settings.ANTHROPIC_API_KEY:
         raise RuntimeError("ANTHROPIC_API_KEY is not set; LLM grading is unavailable")
     if session.ocr_markdown is None or not session.ocr_markdown.strip():
         raise ValueError(f"Grading session {session.id} has no OCR text to grade")
 
+    expected = _expected_questions(scheme) if scheme is not None else None
     async with AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY) as client:
         response = await client.messages.create(
             model=model or settings.LLM_GRADER_MODEL,
             max_tokens=MAX_OUTPUT_TOKENS,
-            system=SYSTEM_PROMPT,
+            system=_system_prompt(expected),
             messages=[
                 {"role": "user", "content": f"<script>\n{session.ocr_markdown}\n</script>"}
             ],
@@ -155,7 +323,7 @@ async def grade_with_llm(
     if response.stop_reason == "max_tokens":
         raise ValueError(f"LLM grader response was cut off at the token limit. Raw response:\n{raw}")
 
-    results = _parse_response(raw, session, grading_run_id)
+    results = _parse_response(raw, session, grading_run_id, expected)
     db.add_all(results)
     await db.flush()
     return results

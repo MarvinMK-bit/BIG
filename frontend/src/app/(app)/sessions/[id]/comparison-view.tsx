@@ -5,14 +5,18 @@ import { MarkSymbols } from "@/components/mark-symbols";
 import { ScriptText } from "@/components/script-text";
 import { muted } from "@/components/ui";
 import {
+  formatAward,
   formatMark,
   indexBlocks,
   indexResults,
   questionKey,
+  markEarned,
+  markLabels,
   questionLabel,
+  sameMarkStructure,
   type ScriptBlock,
 } from "@/lib/script";
-import type { Feedback, QuestionResult, RunComparison } from "@/lib/types";
+import type { Feedback, MarkBreakdownItem, QuestionResult, RunComparison } from "@/lib/types";
 import { graderCall, type GraderCall } from "@/lib/verdict";
 import { FeedbackToggle } from "./feedback-toggle";
 import { VerdictControl } from "./verdict-control";
@@ -28,6 +32,59 @@ function Call({ name, call }: { name: string; call: GraderCall }) {
         <span className="font-medium text-red-700 dark:text-red-400">wrong ✗</span>
       )}
     </span>
+  );
+}
+
+function Award({ item }: { item: MarkBreakdownItem }) {
+  return (
+    <span title={item.reason} className="inline-flex items-baseline gap-1 whitespace-nowrap">
+      <span className="font-mono">{formatAward(item)}</span>
+      {markEarned(item) ? (
+        <span aria-hidden className="text-green-600 dark:text-green-400">✓</span>
+      ) : (
+        <span aria-hidden className="text-red-600 dark:text-red-400">✗</span>
+      )}
+    </span>
+  );
+}
+
+// Both graders used the same mark codes: one row per code, differing codes highlighted.
+function MarksByCode({ scheme, llm }: { scheme: QuestionResult; llm: QuestionResult }) {
+  const schemeMarks = scheme.mark_breakdown ?? [];
+  const llmMarks = llm.mark_breakdown ?? [];
+  const labels = markLabels(schemeMarks);
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className={`text-left text-xs ${muted}`}>
+          <th scope="col" className="py-1 pr-3 font-medium">Code</th>
+          <th scope="col" className="py-1 pr-3 font-medium">Mark scheme</th>
+          <th scope="col" className="py-1 font-medium">LLM</th>
+        </tr>
+      </thead>
+      <tbody>
+        {schemeMarks.map((mark, i) => {
+          const differ = mark.awarded !== llmMarks[i].awarded;
+          return (
+            <tr
+              key={i}
+              className={differ ? "bg-amber-200/70 font-medium dark:bg-amber-900/60" : undefined}
+            >
+              <th scope="row" className="py-1 pr-3 pl-1 text-left font-mono font-normal">
+                {labels[i] ?? mark.code}
+                {differ && <span className="sr-only"> (graders differ)</span>}
+              </th>
+              <td className="py-1 pr-3">
+                <Award item={mark} />
+              </td>
+              <td className="py-1">
+                <Award item={llmMarks[i]} />
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -137,16 +194,20 @@ export function ComparisonView({
                   </p>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1">
-                    <span className={`text-xs font-medium ${muted}`}>Mark scheme</span>
-                    <MarkSymbols result={scheme} />
+                {scheme && llm && sameMarkStructure(scheme, llm) ? (
+                  <MarksByCode scheme={scheme} llm={llm} />
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <span className={`text-xs font-medium ${muted}`}>Mark scheme</span>
+                      <MarkSymbols result={scheme} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className={`text-xs font-medium ${muted}`}>LLM</span>
+                      <MarkSymbols result={llm} />
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <span className={`text-xs font-medium ${muted}`}>LLM</span>
-                    <MarkSymbols result={llm} />
-                  </div>
-                </div>
+                )}
 
                 {resultId && <VerdictControl resultId={resultId} verdict={q.human_verdict} />}
 

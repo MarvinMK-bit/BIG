@@ -1,4 +1,4 @@
-import { formatMark, marksFor } from "@/lib/script";
+import { formatAward, formatMark, markEarned, markLabels, marksFor } from "@/lib/script";
 import type { MarkBreakdownItem, QuestionResult } from "@/lib/types";
 import { muted } from "./ui";
 
@@ -45,23 +45,10 @@ export function MarkSymbols({ result }: { result: QuestionResult | null }) {
   );
 }
 
-const ORDINALS = ["first", "second", "third", "fourth"];
-
-// "second M" where a code repeats, so marks are told apart by position; the code is never renamed.
-function markLabels(items: MarkBreakdownItem[]): (string | null)[] {
-  const seen = new Map<string, number>();
-  return items.map(({ code }) => {
-    const index = seen.get(code) ?? 0;
-    seen.set(code, index + 1);
-    const repeated = items.filter((item) => item.code === code).length > 1;
-    return repeated ? `${ORDINALS[index] ?? `#${index + 1}`} ${code}` : null;
-  });
-}
-
 function CodedMarks({ items }: { items: MarkBreakdownItem[] }) {
   const labels = markLabels(items);
-  const earned = (item: MarkBreakdownItem) => item.awarded >= item.max_mark;
-  const award = (item: MarkBreakdownItem) => `${item.code} - ${formatMark(item.awarded)}`;
+  const earned = markEarned;
+  const award = formatAward;
   const label = items.map((item, i) => (labels[i] ? `${labels[i]}: ` : "") + award(item)).join(", ");
   return (
     <span role="img" aria-label={label} className="flex flex-wrap gap-x-3 gap-y-1 sm:justify-end">

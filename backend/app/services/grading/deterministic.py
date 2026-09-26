@@ -22,10 +22,11 @@ from app.services.grading.schemes import (
     mark_labels,
 )
 
-_QuestionKey = tuple[str, str | None]
+QuestionKey = tuple[str, str | None]
 
 
-def _key(number: str, sub_part: str | None) -> _QuestionKey:
+def question_key(number: str, sub_part: str | None) -> QuestionKey:
+    """Normalised (number, sub_part), so "3", "(a)" and "3", "A" match."""
     if sub_part is None:
         return number.strip(), None
     return number.strip(), sub_part.strip().strip("()").casefold()
@@ -137,14 +138,14 @@ async def grade_with_scheme(
     else:
         raise NoQuestionMarkersError()
 
-    parsed_by_key: dict[_QuestionKey, ParsedAnswer] = {}
+    parsed_by_key: dict[QuestionKey, ParsedAnswer] = {}
     for parsed in answers:
         # If the student's paper repeats a question number, the first occurrence wins
-        parsed_by_key.setdefault(_key(parsed.number, parsed.sub_part), parsed)
+        parsed_by_key.setdefault(question_key(parsed.number, parsed.sub_part), parsed)
 
     results: list[QuestionResult] = []
     for question in scheme.questions:
-        parsed = parsed_by_key.get(_key(question.number, question.sub_part))
+        parsed = parsed_by_key.get(question_key(question.number, question.sub_part))
         mark, reasoning, breakdown = _grade_question(question, parsed)
         results.append(
             QuestionResult(

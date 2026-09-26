@@ -52,6 +52,15 @@ for the first step after `T`, the second for the next, and so on. They keep the 
 output they are told apart by position only — "first M", "second M" — never renamed. Results
 show every mark separately with its own tick or cross, e.g. `T - 1 ✓  M - 1 ✓  M - 0 ✗  A - 1 ✓`.
 
+## Aligning the LLM grader
+
+The LLM grader can be run against a scheme's mark structure, so its marks line up code for code
+with the scheme grader's. It is told each question's number, total marks and ordered codes with
+the generic meanings above — and nothing else: not the expected answers, the mark descriptions,
+the parameters or the procedure. It works out the mathematics itself and returns 1 or 0 per
+code; a response whose codes or order differ from what was asked for is rejected. Where both
+runs share a structure, the comparison view sets them side by side, code by code.
+
 ## How a procedure applies them
 
 Each procedure decides what counts as a correct step for its topic; the codes fix only the

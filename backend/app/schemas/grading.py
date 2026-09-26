@@ -67,6 +67,11 @@ class SchemeGradeRequest(BaseModel):
     unnumbered_mode: bool = False
 
 
+class LLMGradeRequest(BaseModel):
+    # Aligns the model's marks to this scheme's structure; it is never shown the scheme's answers
+    scheme_version: str | None = None
+
+
 class SchemeGradeResponse(BaseModel):
     grading_run_id: uuid.UUID
     results: list[QuestionResultOut]

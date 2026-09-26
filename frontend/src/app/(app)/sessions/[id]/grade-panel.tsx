@@ -54,6 +54,8 @@ export function GradePanel({
   const [schemeVersion, setSchemeVersion] = useState(schemes[0]?.scheme_version ?? "");
   const [unnumbered, setUnnumbered] = useState(false);
   const [noMarkers, setNoMarkers] = useState(false);
+  // "" is no scheme: the LLM grades on its own terms, as before
+  const [llmScheme, setLlmScheme] = useState("");
   const selected = schemes.find((s) => s.scheme_version === schemeVersion);
 
   const busy = posting || refreshing;
@@ -70,7 +72,9 @@ export function GradePanel({
             scheme_version: schemeVersion,
             unnumbered_mode: unnumbered,
           })
-        : await postJson(`/api/grading/sessions/${sessionId}/grade/llm`);
+        : await postJson(`/api/grading/sessions/${sessionId}/grade/llm`, {
+            scheme_version: llmScheme || null,
+          });
     setPosting(false);
     if (!result.ok) {
       if (path === "scheme" && result.status === 422 && result.error.startsWith(NO_MARKERS_PREFIX)) {
@@ -180,6 +184,30 @@ export function GradePanel({
         <p className="text-sm text-amber-800 dark:text-amber-300">
           Note: this path uses a paid model. Each run incurs a cost.
         </p>
+        {schemes.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <label className="flex flex-col gap-1 text-sm">
+              Align marks to a scheme (optional)
+              <select
+                value={llmScheme}
+                onChange={(e) => setLlmScheme(e.target.value)}
+                disabled={!enabled || busy}
+                className="min-h-11 rounded border border-zinc-400 bg-background px-3 text-base"
+              >
+                <option value="">None</option>
+                {schemes.map((s) => (
+                  <option key={s.scheme_version} value={s.scheme_version}>
+                    {s.scheme_version}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className={`text-xs ${mutedColor}`}>
+              This tells the model how many marks to award and what each one is for, but not the
+              answers, so the two graders stay independent.
+            </p>
+          </div>
+        )}
         <button onClick={() => grade("llm")} disabled={!enabled || busy} className={button}>
           {running("llm") ? "Grading…" : "Grade with LLM"}
         </button>
