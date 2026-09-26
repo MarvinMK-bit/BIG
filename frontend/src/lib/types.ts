@@ -276,3 +276,31 @@ export type PayoutStatus = {
 };
 
 export type PayoutResult = { attempt: PayoutAttempt; reward: Reward };
+
+// A public, self-reported claim about how a scheme performed. Aggregate counts only, never student work.
+export type PerformanceReport = {
+  id: string;
+  public_ref: string; // e.g. "R0001a"; disputes share the number: "R0001b"
+  author_username: string;
+  mark_scheme_version: string;
+  disputes_id: string | null;
+  disputes_public_ref: string | null;
+  scripts_tested: number;
+  questions_judged: number;
+  correct_decisions: number;
+  accuracy: number; // correct_decisions / questions_judged, 0 to 1
+  paper_type: string;
+  level: string | null;
+  tester_context: string | null;
+  method_notes: string | null;
+  // Set by the backend when the scheme's author wrote the report
+  is_author_self_report: boolean;
+  created_at: string;
+};
+
+// A top-level report with the disputes against it, both newest first.
+export type ReportWithDisputes = PerformanceReport & { disputed_by: PerformanceReport[] };
+
+export function reportListPath(schemeVersion: string): string {
+  return `/reports/scheme/${encodeURIComponent(schemeVersion)}`;
+}

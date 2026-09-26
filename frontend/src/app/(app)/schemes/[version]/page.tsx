@@ -1,8 +1,15 @@
 import Link from "next/link";
 import { CopyButton } from "@/components/copy-button";
 import { FeedbackThread } from "@/components/feedback-thread";
+import { PerformanceReports } from "@/components/performance-reports";
 import { backendGet, backendGetText } from "@/lib/backend";
-import { feedbackListPath, type Feedback, type Me } from "@/lib/types";
+import {
+  feedbackListPath,
+  reportListPath,
+  type Feedback,
+  type Me,
+  type ReportWithDisputes,
+} from "@/lib/types";
 
 // Depending on the client, "@" may reach us still percent-encoded; decode defensively.
 function decodeParam(value: string): string {
@@ -17,10 +24,11 @@ export default async function SchemePage(props: PageProps<"/schemes/[version]">)
   const schemeVersion = decodeParam((await props.params).version);
   // Schemes are public: no ownership check, anyone signed in can read any scheme.
   const target = { kind: "scheme", version: schemeVersion } as const;
-  const [yaml, me, feedback] = await Promise.all([
+  const [yaml, me, feedback, reports] = await Promise.all([
     backendGetText(`/grading/schemes/${encodeURIComponent(schemeVersion)}/yaml`, { notFound: true }),
     backendGet<Me>("/auth/me"),
     backendGet<Feedback[]>(feedbackListPath(target), { notFound: true }),
+    backendGet<ReportWithDisputes[]>(reportListPath(schemeVersion), { notFound: true }),
   ]);
 
   return (
@@ -37,6 +45,10 @@ export default async function SchemePage(props: PageProps<"/schemes/[version]">)
       <pre className="overflow-x-auto rounded border border-zinc-300 bg-black/[.03] p-3 font-mono text-sm leading-relaxed dark:border-zinc-700 dark:bg-white/[.05]">
         {yaml}
       </pre>
+      <section className="mt-4 flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Reported performance</h2>
+        <PerformanceReports schemeVersion={schemeVersion} initialItems={reports} />
+      </section>
       <section className="mt-4 flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Feedback</h2>
         <FeedbackThread target={target} username={me.username} initialItems={feedback} />
