@@ -20,6 +20,8 @@ class GraderAccuracy:
     judged_questions: int
     correct_decisions: int
     accuracy: float | None
+    # Judged, but left out of the measure because the grader's mark pattern was invalid
+    invalid_pattern_questions: int
 
 
 @dataclass
@@ -35,13 +37,23 @@ class AccuracyPoint:
     cumulative_accuracy: float | None
 
 
-def grader_was_correct() -> Any:
-    """1 when the grader's decision matches the human verdict, else 0.
+def invalid_mark_pattern() -> Any:
+    """True for a result whose marks resume after a zero; see app.services.grading.progress."""
+    return QuestionResult.invalid_mark_pattern.is_(True)
 
-    Correct means the human said the answer was right and the grader awarded full
-    marks, or the human said it was wrong and the grader awarded less than full marks.
+
+def grader_was_correct() -> Any:
+    """1 when the grader's decision matches the human verdict, 0 when it does not, and NULL
+    for a result with an invalid mark pattern, which has no decision to measure.
+
+    Agreement is on how far the grader marked before stopping. Correct means the human said
+    the answer was right and the grader's progress was full, or the human said it was wrong
+    and its progress fell short. For a valid prefix, full progress is exactly full marks, so
+    this compares the mark with max_mark; a question marked as a whole has no codes, and its
+    full mark counts as full progress.
     """
     return case(
+        (invalid_mark_pattern(), None),
         (
             (QuestionResult.is_correct_per_human.is_(True))
             & (QuestionResult.mark_awarded == QuestionResult.max_mark),
@@ -118,14 +130,17 @@ async def measure_accuracy(
     """Measure each grader against human verdicts, per grader type and scheme version.
 
     See grader_was_correct for the rule and latest_judged_results for which results
-    count. owner_id=None measures across every owner and must only be used for admin views.
+    count. Results with an invalid mark pattern are counted in invalid_pattern_questions
+    instead of judged_questions. owner_id=None measures across every owner and must only be
+    used for admin views.
     """
     query = (
         latest_judged_results(
             QuestionResult.grader_type,
             QuestionResult.mark_scheme_version,
-            func.count(QuestionResult.id).label("judged"),
+            func.count(QuestionResult.id).filter(~invalid_mark_pattern()).label("judged"),
             func.sum(grader_was_correct()).label("correct"),
+            func.count(QuestionResult.id).filter(invalid_mark_pattern()).label("invalid"),
             owner_id=owner_id,
             subject=subject,
         )
@@ -141,6 +156,7 @@ async def measure_accuracy(
             judged_questions=row.judged,
             correct_decisions=int(row.correct or 0),
             accuracy=int(row.correct or 0) / row.judged if row.judged else None,
+            invalid_pattern_questions=row.invalid,
         )
         for row in rows
     ]
@@ -157,7 +173,8 @@ async def measure_accuracy_over_time(
     Results are bucketed by their created_at, truncated in UTC to the start of the day,
     ISO week (Monday) or month. Only buckets with judged results appear. The cumulative
     fields sum every bucket up to and including this one for the same grader and scheme
-    version, so the series shows the trend rather than per-period noise.
+    version, so the series shows the trend rather than per-period noise. Results with an
+    invalid mark pattern are left out.
     """
     if bucket not in BUCKETS:
         raise ValueError(f"bucket must be one of {', '.join(BUCKETS)}, got {bucket!r}")
@@ -172,7 +189,7 @@ async def measure_accuracy_over_time(
         grader_was_correct().label("correct"),
         owner_id=owner_id,
         subject=subject,
-    ).subquery("judged")
+    ).where(~invalid_mark_pattern()).subquery("judged")
 
     # Grouping on the subquery's column avoids repeating date_trunc with a second bound parameter
     grader = (judged.c.grader_type, judged.c.mark_scheme_version)

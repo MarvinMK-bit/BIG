@@ -62,6 +62,10 @@ class QuestionResult(Base):
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Procedure questions only: each mark point in scheme order, so every M shows on its own
     mark_breakdown: Mapped[list[MarkBreakdownItem] | None] = mapped_column(JSONB, nullable=True)
+    # Set alongside mark_breakdown: true when its awards are not a valid prefix (a mark earned
+    # after one that was not), which only the LLM grader can produce. Such results are stored as
+    # returned but left out of progress comparison and accuracy. None when there is no breakdown.
+    invalid_mark_pattern: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     is_correct_per_human: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # When the verdict was last set; None when there is no verdict, or it predates this column
     verdict_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -26,7 +26,9 @@ class GraderVerdict:
     mark_scheme_version: str | None
     mark_awarded: Decimal | None
     max_mark: Decimal
-    agreed: bool
+    # None when the grader's mark pattern was invalid, so it has no decision to measure
+    agreed: bool | None
+    invalid_mark_pattern: bool
 
 
 @dataclass
@@ -228,7 +230,8 @@ class QuestionResultRepository:
                             mark_scheme_version=row.QuestionResult.mark_scheme_version,
                             mark_awarded=row.QuestionResult.mark_awarded,
                             max_mark=row.QuestionResult.max_mark,
-                            agreed=bool(row.agreed),
+                            agreed=None if row.agreed is None else bool(row.agreed),
+                            invalid_mark_pattern=bool(row.QuestionResult.invalid_mark_pattern),
                         )
                         for row in graded
                     ],

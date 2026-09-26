@@ -59,7 +59,47 @@ with the scheme grader's. It is told each question's number, total marks and ord
 the generic meanings above — and nothing else: not the expected answers, the mark descriptions,
 the parameters or the procedure. It works out the mathematics itself and returns 1 or 0 per
 code; a response whose codes or order differ from what was asked for is rejected. Where both
-runs share a structure, the comparison view sets them side by side, code by code.
+runs share a structure, they are compared on progress (see below), and the comparison view
+sets their marks side by side, code by code, as the detail.
+
+## The prefix rule
+
+Marking stops at the first wrong step, so a question's marks, read in code order, are always a
+run of 1s followed by a run of 0s. For `T M A D` the only valid patterns are:
+
+| Pattern | Progress | Reached       |
+|---------|----------|---------------|
+| `1111`  | 4        | `D`           |
+| `1110`  | 3        | `A`           |
+| `1100`  | 2        | `M`           |
+| `1000`  | 1        | `T`           |
+| `0000`  | 0        | nothing       |
+
+Anything else, such as `1101` or `1011`, earns a mark after one that was lost, and is malformed.
+A pattern's **progress** is the number of marks earned before the first zero. A mark counts as
+earned when it gets its full value. `mark_progress` and `is_valid_prefix` in
+`backend/app/services/grading/progress.py` implement the rule.
+
+- **Procedures** must always produce a valid prefix. If one does not, grading raises an error:
+  that is a bug in the procedure, not a marking outcome.
+- **The LLM** may return any pattern. An invalid one is stored exactly as returned, never
+  corrected. The result is flagged (`invalid_mark_pattern`), and its reasoning opens with "The
+  model returned an impossible mark pattern — marking stops at the first wrong step, so marks
+  cannot resume after a zero." Flagged results stay visible. They are left out of comparison and
+  accuracy but counted separately in both.
+
+### Comparing graders
+
+Two graders that marked the same codes agree when their progress is equal. Where they differ,
+the comparison says which got further, e.g. `Mark scheme reached A (3); LLM reached T (1).` A
+repeated `M` is named by position, e.g. `second M`. Questions marked as a whole, or by graders
+with different codes, are still compared on the mark.
+
+### Accuracy
+
+A grader's decision is correct when its progress matches the human verdict. A verdict of correct
+needs full progress. A verdict of incorrect needs progress short of full. For a valid prefix, full
+progress is the same as full marks.
 
 ## How a procedure applies them
 

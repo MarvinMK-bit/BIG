@@ -16,13 +16,20 @@ import {
   sameMarkStructure,
   type ScriptBlock,
 } from "@/lib/script";
-import type { Feedback, MarkBreakdownItem, QuestionResult, RunComparison } from "@/lib/types";
+import type {
+  Feedback,
+  MarkBreakdownItem,
+  QuestionComparison,
+  QuestionResult,
+  RunComparison,
+} from "@/lib/types";
 import { graderCall, type GraderCall } from "@/lib/verdict";
 import { FeedbackToggle } from "./feedback-toggle";
 import { VerdictControl } from "./verdict-control";
 
 function Call({ name, call }: { name: string; call: GraderCall }) {
   if (call === "ungraded") return <span className={muted}>{name}: not graded</span>;
+  if (call === "invalid") return <span className={muted}>{name}: excluded (impossible mark pattern)</span>;
   return (
     <span>
       {name}:{" "}
@@ -48,8 +55,22 @@ function Award({ item }: { item: MarkBreakdownItem }) {
   );
 }
 
-// Both graders used the same mark codes: one row per code, differing codes highlighted.
-function MarksByCode({ scheme, llm }: { scheme: QuestionResult; llm: QuestionResult }) {
+// How far a grader marked before stopping, e.g. "3 of 4"; "—" when it can't be measured.
+function progressText(progress: number | null, max: number | null): string {
+  return progress === null || max === null ? "—" : `${progress} of ${max}`;
+}
+
+// Both graders used the same mark codes: one row per code with each grader's tick or cross.
+// The graders are compared on the progress row at the foot; the codes above it are the detail.
+function MarksByCode({
+  q,
+  scheme,
+  llm,
+}: {
+  q: QuestionComparison;
+  scheme: QuestionResult;
+  llm: QuestionResult;
+}) {
   const schemeMarks = scheme.mark_breakdown ?? [];
   const llmMarks = llm.mark_breakdown ?? [];
   const labels = markLabels(schemeMarks);
@@ -63,27 +84,35 @@ function MarksByCode({ scheme, llm }: { scheme: QuestionResult; llm: QuestionRes
         </tr>
       </thead>
       <tbody>
-        {schemeMarks.map((mark, i) => {
-          const differ = mark.awarded !== llmMarks[i].awarded;
-          return (
-            <tr
-              key={i}
-              className={differ ? "bg-amber-200/70 font-medium dark:bg-amber-900/60" : undefined}
-            >
-              <th scope="row" className="py-1 pr-3 pl-1 text-left font-mono font-normal">
-                {labels[i] ?? mark.code}
-                {differ && <span className="sr-only"> (graders differ)</span>}
-              </th>
-              <td className="py-1 pr-3">
-                <Award item={mark} />
-              </td>
-              <td className="py-1">
-                <Award item={llmMarks[i]} />
-              </td>
-            </tr>
-          );
-        })}
+        {schemeMarks.map((mark, i) => (
+          <tr key={i}>
+            <th scope="row" className="py-1 pr-3 pl-1 text-left font-mono font-normal">
+              {labels[i] ?? mark.code}
+            </th>
+            <td className="py-1 pr-3">
+              <Award item={mark} />
+            </td>
+            <td className="py-1">
+              <Award item={llmMarks[i]} />
+            </td>
+          </tr>
+        ))}
       </tbody>
+      <tfoot>
+        <tr className="border-t border-zinc-300 dark:border-zinc-700">
+          <th scope="row" className="py-1 pr-3 pl-1 text-left font-medium">
+            Progress
+          </th>
+          <td className="py-1 pr-3 font-medium">{progressText(q.scheme_progress, q.progress_max)}</td>
+          <td className="py-1 font-medium">
+            {llm.invalid_mark_pattern ? (
+              <span className={muted}>invalid pattern</span>
+            ) : (
+              progressText(q.llm_progress, q.progress_max)
+            )}
+          </td>
+        </tr>
+      </tfoot>
     </table>
   );
 }
@@ -142,6 +171,11 @@ export function ComparisonView({
           <dd className={`text-xs ${muted}`}>
             {agreeing} of {comparable} comparable question{comparable === 1 ? "" : "s"}
           </dd>
+          {comparison.excluded_invalid_pattern > 0 && (
+            <dd className={`text-xs ${muted}`}>
+              {comparison.excluded_invalid_pattern} excluded for an invalid mark pattern
+            </dd>
+          )}
         </div>
         <div>
           <dt className={muted}>Mark scheme total{comparison.scheme_version && ` (${comparison.scheme_version})`}</dt>
@@ -171,6 +205,7 @@ export function ComparisonView({
         <ol className="flex flex-col gap-3">
           {visible.map(({ q, key, label, block, scheme, llm }) => {
             const disagree = q.agree === false;
+            const invalid = q.invalid_mark_pattern;
             const resultId = (scheme ?? llm)?.id;
             return (
               <li
@@ -178,12 +213,20 @@ export function ComparisonView({
                 className={`flex flex-col gap-3 rounded border p-3 ${
                   disagree
                     ? "border-amber-500 bg-amber-100 dark:border-amber-600 dark:bg-amber-950/50"
-                    : "border-zinc-300 dark:border-zinc-700"
+                    : invalid
+                      ? "border-dashed border-zinc-400 dark:border-zinc-600"
+                      : "border-zinc-300 dark:border-zinc-700"
                 }`}
               >
                 {disagree && (
                   <p className="text-xs font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
                     Graders disagree
+                  </p>
+                )}
+                {q.progress_note && <p className="text-sm font-medium">{q.progress_note}</p>}
+                {invalid && (
+                  <p className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>
+                    Excluded from agreement: impossible mark pattern
                   </p>
                 )}
 
@@ -195,7 +238,7 @@ export function ComparisonView({
                 )}
 
                 {scheme && llm && sameMarkStructure(scheme, llm) ? (
-                  <MarksByCode scheme={scheme} llm={llm} />
+                  <MarksByCode q={q} scheme={scheme} llm={llm} />
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1">

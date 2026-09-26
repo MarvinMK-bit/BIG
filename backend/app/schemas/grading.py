@@ -48,6 +48,8 @@ class QuestionResultOut(BaseModel):
     reasoning: str | None
     # One entry per mark point, in scheme order; None unless a procedure marked the question
     mark_breakdown: list[MarkBreakdownOut] | None
+    # True when the awards resume after a zero (LLM only); None without a breakdown
+    invalid_mark_pattern: bool | None
     created_at: datetime
 
 
@@ -86,6 +88,11 @@ class QuestionComparisonOut(BaseModel):
     llm_mark: float | None
     scheme_mark: float | None
     max_mark: float | None
+    llm_progress: int | None
+    scheme_progress: int | None
+    progress_max: int | None
+    progress_note: str | None
+    invalid_mark_pattern: bool
     agree: bool | None
     human_verdict: bool | None
 
@@ -99,6 +106,7 @@ class RunComparisonOut(BaseModel):
     scheme_version: str | None
     questions: list[QuestionComparisonOut]
     agreement_rate: float | None
+    excluded_invalid_pattern: int
     llm_total: float | None
     scheme_total: float | None
     max_total: float | None
@@ -124,6 +132,7 @@ class GraderAccuracyOut(BaseModel):
     judged_questions: int
     correct_decisions: int
     accuracy: float | None
+    invalid_pattern_questions: int
 
 
 class AccuracyPointOut(BaseModel):
@@ -147,7 +156,8 @@ class GraderVerdictOut(BaseModel):
     mark_scheme_version: str | None
     mark_awarded: float | None
     max_mark: float
-    agreed: bool
+    agreed: bool | None
+    invalid_mark_pattern: bool
 
 
 class JudgedQuestionOut(BaseModel):

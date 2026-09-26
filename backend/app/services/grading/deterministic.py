@@ -8,6 +8,7 @@ from app.models.question_result import GraderType, MarkBreakdownItem, QuestionRe
 from app.services.grading.matchers import MATCHERS
 from app.services.grading.errors import NoQuestionMarkersError
 from app.services.grading.procedures import get_procedure
+from app.services.grading.progress import awards_of, is_valid_prefix
 from app.services.grading.parser import (
     ParsedAnswer,
     has_question_markers,
@@ -61,6 +62,13 @@ def _grade_procedure(
         raise ValueError(f"Question {label}: the {procedure.name} procedure did not award the scheme's marks")
     # Matched by position: M can appear more than once
     pairs = list(zip(question.marks, awards))
+    pattern = awards_of((award.awarded, scheme_mark.max_mark) for scheme_mark, award in pairs)
+    if not is_valid_prefix(pattern):
+        # A bug in the procedure, not a marking outcome: every procedure stops at the first wrong step
+        raise AssertionError(
+            f"Question {label}: the {procedure.name} procedure awarded "
+            f"{''.join(map(str, pattern))}, which resumes after a zero"
+        )
     mark = sum((award.awarded for award in awards), Decimal(0))
     labels = mark_labels([award.mark_id for award in awards])
     outcomes = "\n".join(
@@ -163,6 +171,8 @@ async def grade_with_scheme(
                 ocr_confidence=session.ocr_confidence,
                 reasoning=reasoning,
                 mark_breakdown=breakdown,
+                # _grade_procedure raises rather than return an invalid pattern
+                invalid_mark_pattern=False if breakdown is not None else None,
             )
         )
 

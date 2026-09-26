@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.models.grading_session import GradingSession
 from app.models.question_result import GraderType, MarkBreakdownItem, QuestionResult
 from app.services.grading.deterministic import QuestionKey, question_key
+from app.services.grading.progress import breakdown_awards, is_valid_prefix
 from app.services.grading.schemes import (
     MARK_CODE_MEANINGS,
     PROCEDURE_MATCHER,
@@ -21,6 +22,11 @@ from app.services.grading.schemes import (
 )
 
 MAX_OUTPUT_TOKENS = 16000
+
+INVALID_PATTERN_REASON = (
+    "The model returned an impossible mark pattern — marking stops at the first wrong step, "
+    "so marks cannot resume after a zero."
+)
 
 SYSTEM_PROMPT = """\
 You are an experienced teacher marking a student's script. The user message contains \
@@ -182,15 +188,19 @@ def _coded_marks(
     return total, breakdown
 
 
-def _coded_reasoning(reasoning: str | None, breakdown: list[MarkBreakdownItem]) -> str:
-    """The model's summary, then one line per mark in the same form the scheme grader uses."""
+def _coded_reasoning(
+    reasoning: str | None, breakdown: list[MarkBreakdownItem], invalid_pattern: bool
+) -> str:
+    """The model's summary, then one line per mark in the same form the scheme grader uses,
+    headed by a warning when the awards break the prefix rule."""
     labels = mark_labels([item["code"] for item in breakdown])
     lines = [
         f"{format_award(item['code'], Decimal(str(item['awarded'])))}"
         f"{f' ({label})' if label else ''}: {item['reason']}"
         for item, label in zip(breakdown, labels)
     ]
-    return "\n".join(([reasoning] if reasoning else []) + lines)
+    head = [INVALID_PATTERN_REASON] if invalid_pattern else []
+    return "\n".join(head + ([reasoning] if reasoning else []) + lines)
 
 
 def _build_result(
@@ -219,10 +229,13 @@ def _build_result(
             raise ValueError(f"{where} grades question {number!r}, which was not asked for")
 
     breakdown: list[MarkBreakdownItem] | None = None
+    invalid_pattern: bool | None = None
     if asked is not None and asked.codes:
         max_mark = asked.max_mark
         mark_awarded, breakdown = _coded_marks(item.get("marks"), asked, where)
-        reasoning = _coded_reasoning(reasoning, breakdown)
+        # Kept exactly as returned, not corrected; the flag keeps it out of comparison and accuracy
+        invalid_pattern = not is_valid_prefix(breakdown_awards(breakdown))
+        reasoning = _coded_reasoning(reasoning, breakdown, invalid_pattern)
     else:
         max_mark = _decimal(item.get("max_mark"), f"{where}.max_mark")
         mark_awarded = _decimal(item.get("mark_awarded"), f"{where}.mark_awarded")
@@ -256,6 +269,7 @@ def _build_result(
         ocr_confidence=session.ocr_confidence,
         reasoning=reasoning,
         mark_breakdown=breakdown,
+        invalid_mark_pattern=invalid_pattern,
     )
 
 

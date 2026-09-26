@@ -77,6 +77,14 @@ function Agreement({ grader }: { grader: GraderVerdict | undefined }) {
       </span>
     );
   }
+  if (grader.agreed === null) {
+    return (
+      <span className={muted} title="Impossible mark pattern: excluded from accuracy">
+        <span aria-hidden>⊘</span>
+        <span className="sr-only">excluded, impossible mark pattern</span>
+      </span>
+    );
+  }
   return grader.agreed ? (
     <span className="text-green-700 dark:text-green-400">
       <span aria-hidden>✓</span>
@@ -112,6 +120,13 @@ function SummaryCards({ rows }: { rows: GraderAccuracy[] }) {
               <dd className="font-medium">{r.correct_decisions}</dd>
             </div>
           </dl>
+          {r.invalid_pattern_questions > 0 && (
+            <p className={`text-sm ${muted}`}>
+              {r.invalid_pattern_questions} more judged question
+              {r.invalid_pattern_questions === 1 ? "" : "s"} excluded: the grader returned an
+              impossible mark pattern.
+            </p>
+          )}
           {r.judged_questions < MIN_JUDGED && (
             <p className="text-sm text-amber-800 dark:text-amber-300">
               Based on {r.judged_questions} judged question{r.judged_questions === 1 ? "" : "s"} —
@@ -160,7 +175,8 @@ function VerdictTable({
         <p className={`text-sm ${muted}`}>
           {history.total} judged question{history.total === 1 ? "" : "s"}, newest verdict first.{" "}
           <span aria-hidden>✓</span> the grader agreed with the verdict, <span aria-hidden>✗</span>{" "}
-          it didn&apos;t, — it didn&apos;t grade that question.
+          it didn&apos;t, <span aria-hidden>⊘</span> excluded for an impossible mark pattern, — it
+          didn&apos;t grade that question.
         </p>
       </div>
 
@@ -292,6 +308,12 @@ export default async function AccuracyPage(props: PageProps<"/accuracy">) {
           <p className={`text-sm ${muted}`}>
             How often each grader agreed with {view.everyone ? "everyone's" : "your"} verdicts on
             the student&apos;s answer.
+          </p>
+          <p className={`text-sm ${muted}`}>
+            Agreement is measured on how far each grader marked before stopping: a verdict of
+            correct needs every mark, T to D; incorrect needs the grader to stop short. Results
+            whose marks resume after a zero are impossible under that rule, so they are shown but
+            not counted.
           </p>
         </div>
         {me.is_admin && (

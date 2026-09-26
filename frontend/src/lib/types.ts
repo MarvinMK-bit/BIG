@@ -74,6 +74,8 @@ export type QuestionResult = {
   reasoning: string | null;
   // One entry per mark point, in scheme order; only for procedure-marked questions
   mark_breakdown: MarkBreakdownItem[] | null;
+  // True when the awards resume after a zero (LLM only; see docs/MARK-CODES.md); null without a breakdown
+  invalid_mark_pattern: boolean | null;
   created_at: string;
 };
 
@@ -103,6 +105,14 @@ export type QuestionComparison = {
   llm_mark: number | null;
   scheme_mark: number | null;
   max_mark: number | null;
+  // Coded questions: marks earned before the first zero, 0 to progress_max
+  llm_progress: number | null;
+  scheme_progress: number | null;
+  progress_max: number | null;
+  // Which grader got further, e.g. "Mark scheme reached A (3); LLM reached T (1)."
+  progress_note: string | null;
+  // A grader's marks resume after a zero; agree is then null
+  invalid_mark_pattern: boolean;
   agree: boolean | null;
   human_verdict: boolean | null;
 };
@@ -114,6 +124,7 @@ export type RunComparison = {
   scheme_version: string | null;
   questions: QuestionComparison[];
   agreement_rate: number | null;
+  excluded_invalid_pattern: number;
   llm_total: number | null;
   scheme_total: number | null;
   max_total: number | null;
@@ -125,6 +136,8 @@ export type GraderAccuracy = {
   judged_questions: number;
   correct_decisions: number;
   accuracy: number | null;
+  // Judged, but excluded from accuracy because the grader's mark pattern was invalid
+  invalid_pattern_questions: number;
 };
 
 export type Bucket = "day" | "week" | "month";
@@ -147,7 +160,9 @@ export type GraderVerdict = {
   mark_scheme_version: string | null;
   mark_awarded: number | null;
   max_mark: number;
-  agreed: boolean;
+  // null when the grader's mark pattern was invalid, so it is excluded from accuracy
+  agreed: boolean | null;
+  invalid_mark_pattern: boolean;
 };
 
 export type JudgedQuestion = {
