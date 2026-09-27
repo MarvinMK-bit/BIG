@@ -1,10 +1,12 @@
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.mark_scheme import MarkSchemeRecord, MarkSchemeSource
+from app.models.mark_scheme import MarkSchemeRecord, MarkSchemeSource, SchemeReviewStatus
 
 
 def split_scheme_version(scheme_version: str) -> tuple[str, str] | None:
@@ -82,6 +84,48 @@ class MarkSchemeRepository:
             .order_by(MarkSchemeRecord.created_at, MarkSchemeRecord.name, MarkSchemeRecord.version)
         )
         return list(result.scalars().all())
+
+    async def list_pending(self) -> list[MarkSchemeRecord]:
+        """Schemes awaiting review, newest first. For admins only."""
+        result = await self.session.execute(
+            select(MarkSchemeRecord)
+            .options(selectinload(MarkSchemeRecord.owner))
+            .where(MarkSchemeRecord.review_status == SchemeReviewStatus.PENDING)
+            .order_by(MarkSchemeRecord.created_at.desc(), MarkSchemeRecord.name, MarkSchemeRecord.version)
+        )
+        return list(result.scalars().all())
+
+    async def set_review(
+        self,
+        record: MarkSchemeRecord,
+        status: SchemeReviewStatus,
+        reviewer_id: UUID,
+        note: str | None,
+    ) -> MarkSchemeRecord:
+        """Record an admin's decision on whether the scheme enters the public corpus.
+
+        This changes nothing about who can grade with it. A later review replaces an earlier one.
+        """
+        if status == SchemeReviewStatus.PENDING:
+            raise ValueError("A scheme can't be reviewed back to pending.")
+        record.review_status = status
+        record.reviewed_by_id = reviewer_id
+        record.reviewed_at = datetime.now(UTC)
+        record.review_note = note
+        await self.session.flush()
+        return record
+
+    async def mark_exported(self, scheme_ids: Iterable[UUID]) -> None:
+        """Stamp exported_at on each scheme, now."""
+        ids = list(scheme_ids)
+        if not ids:
+            return
+        await self.session.execute(
+            update(MarkSchemeRecord)
+            .where(MarkSchemeRecord.id.in_(ids))
+            .values(exported_at=datetime.now(UTC))
+        )
+        await self.session.flush()
 
     async def delete_own(self, scheme_id: UUID, owner_id: UUID) -> bool:
         """Delete the scheme if owner_id owns it. Returns whether anything was deleted."""

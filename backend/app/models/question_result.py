@@ -69,6 +69,9 @@ class QuestionResult(Base):
     is_correct_per_human: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # When the verdict was last set; None when there is no verdict, or it predates this column
     verdict_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # True for an admin's trial of a scheme under review (the /moderation test panel). Such runs
+    # are left out of accuracy, the verdict history and the session's list of runs. None otherwise.
+    is_test_run: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

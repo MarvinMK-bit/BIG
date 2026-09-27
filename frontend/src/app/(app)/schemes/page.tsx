@@ -1,9 +1,16 @@
 import Link from "next/link";
 import { muted } from "@/components/ui";
 import { backendGet } from "@/lib/backend";
-import { type Scheme, schemeOriginLabel, schemeVersionPart } from "@/lib/types";
+import { type Scheme, type SchemeReviewStatus, schemeOriginLabel, schemeVersionPart } from "@/lib/types";
 import { DeleteSchemeButton } from "./delete-button";
 import { SchemeUploadForm } from "./upload-form";
+
+// Whether an uploaded scheme has been admitted to the public corpus; it grades either way.
+const REVIEW_BADGES: Record<SchemeReviewStatus, { label: string; className: string }> = {
+  pending: { label: "pending review", className: "bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100" },
+  accepted: { label: "accepted", className: "bg-green-100 text-green-900 dark:bg-green-900 dark:text-green-100" },
+  declined: { label: "declined", className: "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200" },
+};
 
 export default async function SchemesPage() {
   const [schemes, user] = await Promise.all([
@@ -52,6 +59,11 @@ export default async function SchemesPage() {
                       >
                         {schemeOriginLabel(s)}
                       </span>
+                      {s.review_status && (
+                        <span className={`rounded px-2 py-0.5 text-xs ${REVIEW_BADGES[s.review_status].className}`}>
+                          {REVIEW_BADGES[s.review_status].label}
+                        </span>
+                      )}
                     </span>
                     <span className={`text-sm ${muted}`}>
                       {s.subject ?? "No subject"} · {s.question_count}{" "}

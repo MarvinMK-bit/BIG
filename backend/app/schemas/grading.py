@@ -1,10 +1,11 @@
 import uuid
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from app.models.grading_session import GradingStatus
+from app.models.mark_scheme import SchemeReviewStatus
 from app.models.question_result import GraderType
 
 
@@ -62,6 +63,62 @@ class SchemeOut(BaseModel):
     origin: Literal["repo", "uploaded"]
     # Set for uploaded schemes only
     owner_username: str | None = None
+    # Uploaded schemes only: whether an admin has let it into the public corpus. It does not
+    # affect grading; None for repo files, which are the corpus.
+    review_status: SchemeReviewStatus | None = None
+
+
+class SchemeQuestionSummary(BaseModel):
+    """What a scheme question marks, without its answer."""
+
+    number: str
+    sub_part: str | None
+    matcher: str
+    max_mark: float
+    # Procedure questions only
+    procedure: str | None = None
+    mark_codes: list[str] | None = None
+
+
+class PendingSchemeOut(BaseModel):
+    scheme_version: str
+    name: str
+    version: str
+    subject: str | None
+    description: str | None
+    source: str
+    contributor_username: str
+    # Whether the contributor agreed to be named when the scheme is exported
+    attribution_opt_in: bool
+    question_count: int
+    questions: list[SchemeQuestionSummary]
+    # Set when the stored YAML no longer parses under the current rules; questions is then empty
+    parse_error: str | None
+    yaml_content: str
+    created_at: datetime
+
+
+ReviewNote = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
+
+
+class SchemeReviewRequest(BaseModel):
+    review_status: Literal[SchemeReviewStatus.ACCEPTED, SchemeReviewStatus.DECLINED]
+    note: ReviewNote | None = None
+
+
+class SchemeReviewOut(BaseModel):
+    scheme_version: str
+    review_status: SchemeReviewStatus
+    review_note: str | None
+    reviewed_at: datetime
+    exported_at: datetime | None
+    # What BIG pays for a well-designed accepted scheme (SCHEME_REWARD_SATS); nothing is recorded here
+    reward_sats: int
+
+
+class SchemeTestRequest(BaseModel):
+    session_id: uuid.UUID
+    unnumbered_mode: bool = False
 
 
 class SchemeGradeRequest(BaseModel):

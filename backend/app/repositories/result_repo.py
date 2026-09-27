@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.grading_session import GradingSession
 from app.models.question_result import GraderType, QuestionResult
 from app.models.user import User
-from app.services.grading.accuracy import grader_was_correct, latest_judged_results
+from app.services.grading.accuracy import grader_was_correct, latest_judged_results, not_test_run
 
 
 def question_sort_key(number: str, sub_part: str | None) -> tuple[int, str, str]:
@@ -72,6 +72,7 @@ class QuestionResultRepository:
     async def list_runs_for_session(
         self, session_id: UUID, owner_id: UUID
     ) -> list[tuple[UUID, str, str | None, datetime]]:
+        """Every run on the session, newest first, except test runs of schemes under review."""
         first_created = func.min(QuestionResult.created_at).label("first_created")
         result = await self.session.execute(
             select(
@@ -80,7 +81,11 @@ class QuestionResultRepository:
                 QuestionResult.mark_scheme_version,
                 first_created,
             )
-            .where(QuestionResult.session_id == session_id, QuestionResult.owner_id == owner_id)
+            .where(
+                QuestionResult.session_id == session_id,
+                QuestionResult.owner_id == owner_id,
+                not_test_run(),
+            )
             .group_by(
                 QuestionResult.grading_run_id,
                 QuestionResult.grader_type,
@@ -145,7 +150,8 @@ class QuestionResultRepository:
         """One entry per judged question, newest verdict first, and the total number of them.
 
         A question is a (session, question number, sub-part); its graders are the latest run
-        of each grader on that session, the same results measure_accuracy counts. Verdicts set
+        of each grader on that session, the same results measure_accuracy counts, so test runs
+        (is_test_run) are left out by latest_judged_results. Verdicts set
         before verdict_set_at existed have no timestamp and sort after the rest, by grading
         time. owner_id=None covers every owner and must only be used for admin views.
         """

@@ -1,12 +1,18 @@
 import Link from "next/link";
 import { backendGet } from "@/lib/backend";
-import type { Feedback, Me } from "@/lib/types";
+import type { Feedback, Me, PendingScheme } from "@/lib/types";
 import { LogoutButton } from "./logout-button";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await backendGet<Me>("/auth/me");
+  // Everything awaiting an admin on /moderation: feedback and contributed schemes
   const pendingCount = user.is_admin
-    ? (await backendGet<Feedback[]>("/feedback/pending")).length
+    ? (
+        await Promise.all([
+          backendGet<Feedback[]>("/feedback/pending"),
+          backendGet<PendingScheme[]>("/grading/schemes/pending"),
+        ])
+      ).reduce((total, items) => total + items.length, 0)
     : 0;
 
   return (

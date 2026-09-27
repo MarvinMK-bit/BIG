@@ -42,6 +42,11 @@ def invalid_mark_pattern() -> Any:
     return QuestionResult.invalid_mark_pattern.is_(True)
 
 
+def not_test_run() -> Any:
+    """False for results of an admin's trial of a scheme under review; see QuestionResult.is_test_run."""
+    return QuestionResult.is_test_run.is_not(True)
+
+
 def grader_was_correct() -> Any:
     """1 when the grader's decision matches the human verdict, 0 when it does not, and NULL
     for a result with an invalid mark pattern, which has no decision to measure.
@@ -83,6 +88,9 @@ def latest_judged_results(
     run is the one with the newest created_at (ties broken by grading_run_id so the
     choice is deterministic).
 
+    Test runs (is_test_run) are left out entirely, before the latest run is picked, so a trial
+    of a scheme under review neither counts nor hides the real run it followed.
+
     owner_id=None covers every owner and must only be used for admin views.
     """
     # Rank each run within its (session, grader type, scheme version) group, newest first.
@@ -100,7 +108,7 @@ def latest_judged_results(
             order_by=(func.min(QuestionResult.created_at).desc(), QuestionResult.grading_run_id.desc()),
         )
         .label("recency"),
-    ).group_by(*run_group, QuestionResult.grading_run_id)
+    ).where(not_test_run()).group_by(*run_group, QuestionResult.grading_run_id)
     if owner_id is not None:
         ranked_runs = ranked_runs.where(QuestionResult.owner_id == owner_id)
     ranked = ranked_runs.subquery("ranked_runs")
@@ -111,7 +119,7 @@ def latest_judged_results(
         .join(ranked, (ranked.c.grading_run_id == QuestionResult.grading_run_id) & (ranked.c.recency == 1))
         # Judged-ness is decided after picking the latest run, not before: a latest run with no
         # verdicts contributes nothing rather than falling back to an older, judged run.
-        .where(QuestionResult.is_correct_per_human.is_not(None))
+        .where(QuestionResult.is_correct_per_human.is_not(None), not_test_run())
     )
     if owner_id is not None:
         query = query.where(QuestionResult.owner_id == owner_id)

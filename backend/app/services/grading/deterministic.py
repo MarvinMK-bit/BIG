@@ -135,7 +135,13 @@ async def grade_with_scheme(
     db: AsyncSession,
     grading_run_id: UUID,
     unnumbered_mode: bool = False,
+    is_test_run: bool = False,
 ) -> list[QuestionResult]:
+    """Grade the session's OCR text against the scheme and store one result per scheme question.
+
+    is_test_run marks the results as an admin's trial of a scheme under review, which keeps
+    them out of accuracy figures; see QuestionResult.is_test_run.
+    """
     if session.ocr_markdown is None:
         raise ValueError(f"Grading session {session.id} has no OCR text to grade")
 
@@ -173,6 +179,7 @@ async def grade_with_scheme(
                 mark_breakdown=breakdown,
                 # _grade_procedure raises rather than return an invalid pattern
                 invalid_mark_pattern=False if breakdown is not None else None,
+                is_test_run=True if is_test_run else None,
             )
         )
 

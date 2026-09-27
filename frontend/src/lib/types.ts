@@ -48,7 +48,53 @@ export type Scheme = {
   origin: "repo" | "uploaded";
   // Set for uploaded schemes only
   owner_username: string | null;
+  // Uploaded schemes only: whether an admin has let it into the public corpus. Grading with it
+  // works either way. null for repo files, which are the corpus.
+  review_status: SchemeReviewStatus | null;
 };
+
+export type SchemeReviewStatus = "pending" | "accepted" | "declined";
+
+// What a scheme question marks, without its answer.
+export type SchemeQuestionSummary = {
+  number: string;
+  sub_part: string | null;
+  matcher: string;
+  max_mark: number;
+  // Procedure questions only
+  procedure: string | null;
+  mark_codes: string[] | null;
+};
+
+// An uploaded scheme awaiting review, as shown on /moderation. Admin only.
+export type PendingScheme = {
+  scheme_version: string;
+  name: string;
+  version: string;
+  subject: string | null;
+  description: string | null;
+  source: string;
+  contributor_username: string;
+  attribution_opt_in: boolean;
+  question_count: number;
+  questions: SchemeQuestionSummary[];
+  // Set when the stored YAML no longer parses; questions is then empty
+  parse_error: string | null;
+  yaml_content: string;
+  created_at: string;
+};
+
+export type SchemeReview = {
+  scheme_version: string;
+  review_status: SchemeReviewStatus;
+  review_note: string | null;
+  reviewed_at: string;
+  exported_at: string | null;
+  // What BIG pays for a well-designed accepted scheme; nothing is recorded by the review
+  reward_sats: number;
+};
+
+export type SchemeGradeResponse = { grading_run_id: string; results: QuestionResult[] };
 
 // The version half of "name@version"; names may contain "@", so split at the last one.
 export function schemeVersionPart(scheme: Scheme): string {

@@ -37,9 +37,11 @@ function TargetLink({ item }: { item: Feedback }) {
 export function ModerationList({ initialItems }: { initialItems: Feedback[] }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  // Kept client-side, so decided items stay on screen (with the payout reminder) after the
-  // refresh that updates the nav badge
-  const [decided, setDecided] = useState<Record<string, { status: Decision; reward: Reward | null }>>({});
+  // Kept client-side, with the item itself, so decided items stay on screen (with the payout
+  // reminder) after the refresh that updates the nav badge drops them from initialItems
+  const [decided, setDecided] = useState<
+    Record<string, { item: Feedback; status: Decision; reward: Reward | null }>
+  >({});
   const [busy, setBusy] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -53,17 +55,25 @@ export function ModerationList({ initialItems }: { initialItems: Feedback[] }) {
     });
     setBusy(null);
     if (!result.ok) return setErrors((e) => ({ ...e, [item.id]: result.error }));
-    setDecided((d) => ({ ...d, [item.id]: { status, reward: result.data.reward } }));
+    setDecided((d) => ({ ...d, [item.id]: { item, status, reward: result.data.reward } }));
     startTransition(() => router.refresh());
   }
 
-  if (initialItems.length === 0) {
+  const pendingIds = new Set(initialItems.map((item) => item.id));
+  const items = [
+    ...initialItems,
+    ...Object.values(decided)
+      .map((d) => d.item)
+      .filter((item) => !pendingIds.has(item.id)),
+  ].toSorted((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+
+  if (items.length === 0) {
     return <p className={`text-sm ${muted}`}>Nothing to review.</p>;
   }
 
   return (
     <ol className="flex flex-col gap-3">
-      {initialItems.map((item) => {
+      {items.map((item) => {
         const decision = decided[item.id]?.status;
         const reward = decided[item.id]?.reward ?? null;
         return (

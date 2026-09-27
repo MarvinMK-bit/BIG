@@ -2,9 +2,13 @@
 
 Usage (from the backend directory):
     python -m scripts.export_schemes [--out DIR] [--version NAME@VERSION | --all] [--force]
+        [--include-pending]
 
-Without --version every database scheme is exported. Each file is named after the
-scheme (slugified) and holds the stored YAML verbatim under a provenance header.
+Without --version every database scheme is exported. Only schemes an admin has accepted
+on /moderation are written; --include-pending also writes those still awaiting review.
+Declined schemes are never exported. Each file is named after the scheme (slugified) and
+holds the stored YAML verbatim under a provenance header, and each scheme written has its
+exported_at recorded in the database.
 The database comes from DATABASE_URL, so an exported DATABASE_URL (overriding .env)
 points it at production.
 """
@@ -16,7 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.core.database import AsyncSessionLocal, engine
-from app.models.mark_scheme import MarkSchemeRecord
+from app.models.mark_scheme import MarkSchemeRecord, SchemeReviewStatus
 from app.repositories.scheme_repo import MarkSchemeRepository
 from app.services.grading.scheme_export import export_filename, export_text
 from app.services.grading.schemes import load_scheme
@@ -35,6 +39,11 @@ def parse_args() -> argparse.Namespace:
     which.add_argument("--version", metavar="NAME@VERSION", help="export only this scheme")
     which.add_argument("--all", action="store_true", help="export every scheme (the default)")
     parser.add_argument("--force", action="store_true", help="overwrite files that already exist")
+    parser.add_argument(
+        "--include-pending",
+        action="store_true",
+        help="also export schemes not yet reviewed (declined schemes are never exported)",
+    )
     return parser.parse_args()
 
 
@@ -52,26 +61,40 @@ def existing_versions(directory: Path) -> dict[str, Path]:
     return found
 
 
-def export(records: list[MarkSchemeRecord], out: Path, force: bool) -> tuple[int, int]:
-    """Write each record's file. Returns (written, skipped)."""
+def review_skip_reason(record: MarkSchemeRecord, include_pending: bool) -> str | None:
+    """Why the scheme's review status keeps it out of the repository, or None if it doesn't."""
+    status = record.review_status
+    if status == SchemeReviewStatus.ACCEPTED:
+        return None
+    if status == SchemeReviewStatus.PENDING:
+        return None if include_pending else "not reviewed yet (use --include-pending to export anyway)"
+    return f"{status.value} on review"
+
+
+def export(
+    records: list[MarkSchemeRecord], out: Path, force: bool, include_pending: bool
+) -> tuple[list[MarkSchemeRecord], int]:
+    """Write each record's file. Returns (the records written, number skipped)."""
     out.mkdir(parents=True, exist_ok=True)
     on_disk = existing_versions(out)
     exported_on = datetime.now(UTC).date()
     written_this_run: dict[Path, str] = {}
-    written = skipped = 0
+    written: list[MarkSchemeRecord] = []
+    skipped = 0
 
     for record in records:
         version = record.scheme_version
         target = out / export_filename(record.name)
 
-        reason: str | None = None
-        if target in written_this_run:
-            reason = f"{target.name} was already written for {written_this_run[target]} in this run"
-        elif version in on_disk and on_disk[version] != target:
-            # A second file with the same name@version would stop the backend loading schemes
-            reason = f"already in the repository as {on_disk[version].name}"
-        elif target.exists() and not force:
-            reason = f"{target} already exists (use --force to overwrite)"
+        reason = review_skip_reason(record, include_pending)
+        if reason is None:
+            if target in written_this_run:
+                reason = f"{target.name} was already written for {written_this_run[target]} in this run"
+            elif version in on_disk and on_disk[version] != target:
+                # A second file with the same name@version would stop the backend loading schemes
+                reason = f"already in the repository as {on_disk[version].name}"
+            elif target.exists() and not force:
+                reason = f"{target} already exists (use --force to overwrite)"
 
         if reason is not None:
             print(f"Skipped {version}: {reason}")
@@ -81,7 +104,7 @@ def export(records: list[MarkSchemeRecord], out: Path, force: bool) -> tuple[int
         target.write_text(export_text(record, exported_on), encoding="utf-8")
         written_this_run[target] = version
         print(f"Wrote {version} -> {target}")
-        written += 1
+        written.append(record)
 
     return written, skipped
 
@@ -99,14 +122,18 @@ async def main() -> int:
                 records = [record]
             else:
                 records = await repo.list_everything()
+
+            if not records:
+                print("No schemes in the database.")
+                return 0
+            written, skipped = export(records, args.out, args.force, args.include_pending)
+            # Only after every file is on disk; a failed write above leaves exported_at untouched
+            await repo.mark_exported(record.id for record in written)
+            await session.commit()
     finally:
         await engine.dispose()
 
-    if not records:
-        print("No schemes in the database.")
-        return 0
-    written, skipped = export(records, args.out, args.force)
-    print(f"{written} written, {skipped} skipped.")
+    print(f"{len(written)} written, {skipped} skipped.")
     return 0
 
 

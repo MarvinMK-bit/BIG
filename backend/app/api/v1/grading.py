@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.grading_session import GradingSession, GradingStatus
+from app.models.mark_scheme import MarkSchemeRecord
 from app.models.question_result import QuestionResult
 from app.models.user import User
 from app.repositories.grading_repo import GradingSessionRepository
@@ -21,11 +22,16 @@ from app.schemas.grading import (
     GradingRunOut,
     GradingSessionOut,
     LLMGradeRequest,
+    PendingSchemeOut,
     QuestionResultOut,
     RunComparisonOut,
     SchemeGradeRequest,
     SchemeGradeResponse,
     SchemeOut,
+    SchemeQuestionSummary,
+    SchemeReviewOut,
+    SchemeReviewRequest,
+    SchemeTestRequest,
     VerdictHistoryOut,
     VerdictRequest,
 )
@@ -46,7 +52,7 @@ from app.services.grading.scheme_store import (
     load_repo_schemes,
     resolve_scheme,
 )
-from app.services.grading.schemes import parse_scheme
+from app.services.grading.schemes import PROCEDURE_MATCHER, MarkScheme, parse_scheme
 from app.services.storage import get_backend
 
 router = APIRouter(prefix="/grading", tags=["grading"])
@@ -177,9 +183,140 @@ async def list_schemes(
                 question_count=record.question_count,
                 origin="uploaded",
                 owner_username=record.owner.username,
+                review_status=record.review_status,
             )
         )
     return out
+
+
+def _question_summaries(scheme: MarkScheme) -> list[SchemeQuestionSummary]:
+    return [
+        SchemeQuestionSummary(
+            number=q.number,
+            sub_part=q.sub_part,
+            matcher=q.matcher,
+            max_mark=float(q.max_mark),
+            procedure=q.procedure if q.matcher == PROCEDURE_MATCHER else None,
+            mark_codes=[m.id for m in q.marks] if q.matcher == PROCEDURE_MATCHER else None,
+        )
+        for q in scheme.questions
+    ]
+
+
+def _pending_out(record: MarkSchemeRecord) -> PendingSchemeOut:
+    questions: list[SchemeQuestionSummary] = []
+    parse_error: str | None = None
+    try:
+        questions = _question_summaries(parse_scheme(record.yaml_content))
+    except ValueError as exc:
+        # Validated on upload, so this only happens if the rules have since tightened
+        parse_error = str(exc)
+    return PendingSchemeOut(
+        scheme_version=record.scheme_version,
+        name=record.name,
+        version=record.version,
+        subject=record.subject,
+        description=record.description,
+        source=record.source.value,
+        contributor_username=record.owner.username,
+        attribution_opt_in=record.owner.attribution_opt_in,
+        question_count=record.question_count,
+        questions=questions,
+        parse_error=parse_error,
+        yaml_content=record.yaml_content,
+        created_at=record.created_at,
+    )
+
+
+@router.get("/schemes/pending", response_model=list[PendingSchemeOut])
+async def list_pending_schemes(
+    admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_db),
+) -> list[PendingSchemeOut]:
+    """Uploaded schemes awaiting a decision on entering the public corpus, newest first."""
+    return [_pending_out(r) for r in await MarkSchemeRepository(session).list_pending()]
+
+
+@router.patch("/schemes/{scheme_version}/review", response_model=SchemeReviewOut)
+async def review_scheme(
+    scheme_version: str,
+    body: SchemeReviewRequest,
+    admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_db),
+) -> SchemeReviewOut:
+    """Accept or decline an uploaded scheme for the public corpus. Grading with it is unaffected."""
+    repo = MarkSchemeRepository(session)
+    record = await repo.get_by_version(scheme_version)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Mark scheme {scheme_version!r} not found"
+        )
+
+    await repo.set_review(record, body.review_status, admin.id, body.note or None)
+    await session.commit()
+    assert record.reviewed_at is not None
+    return SchemeReviewOut(
+        scheme_version=record.scheme_version,
+        review_status=record.review_status,
+        review_note=record.review_note,
+        reviewed_at=record.reviewed_at,
+        exported_at=record.exported_at,
+        reward_sats=get_settings().SCHEME_REWARD_SATS,
+    )
+
+
+@router.post("/schemes/{scheme_version}/test", response_model=SchemeGradeResponse)
+async def test_scheme(
+    scheme_version: str,
+    body: SchemeTestRequest,
+    admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_db),
+) -> SchemeGradeResponse:
+    """Grade one of the admin's own sessions with an uploaded scheme, to judge it before review.
+
+    The results are stored as a test run, so they stay out of accuracy figures and the
+    session's own list of runs.
+    """
+    record = await MarkSchemeRepository(session).get_by_version(scheme_version)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Mark scheme {scheme_version!r} not found"
+        )
+
+    grading_session = await GradingSessionRepository(session).get_for_owner(body.session_id, admin.id)
+    if grading_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grading session not found")
+    if grading_session.status != GradingStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Grading session is {grading_session.status.value}; OCR must be completed before grading",
+        )
+
+    grading_run_id = uuid.uuid4()
+    try:
+        # The stored record, not resolve_scheme: a repo file of the same version must not stand in for it
+        scheme = parse_scheme(record.yaml_content)
+        results = await grade_with_scheme(
+            grading_session,
+            scheme,
+            session,
+            grading_run_id,
+            unnumbered_mode=body.unnumbered_mode,
+            is_test_run=True,
+        )
+    except NoQuestionMarkersError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except ValueError as exc:
+        # A candidate scheme may name a procedure or matcher this instance doesn't have
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"This scheme can't grade: {exc}"
+        )
+    await session.commit()
+
+    return SchemeGradeResponse(
+        grading_run_id=grading_run_id,
+        results=[QuestionResultOut.model_validate(r) for r in results],
+    )
 
 
 @router.post("/schemes", response_model=SchemeOut, status_code=status.HTTP_201_CREATED)
@@ -246,6 +383,7 @@ async def upload_scheme(
         question_count=record.question_count,
         origin="uploaded",
         owner_username=user.username,
+        review_status=record.review_status,
     )
 
 

@@ -14,13 +14,21 @@ see [MARK-CODES.md](MARK-CODES.md).
 
 ## Moving an uploaded scheme into the repository
 
-An admin exports it and commits the file.
+An admin reviews it on the Moderation page, exports it and commits the file.
+
+Every uploaded scheme starts as pending review. On `/moderation` an admin can read it, grade
+one of their own scripts with it (a test run, kept out of accuracy figures), and accept or
+decline it. Review only decides whether the scheme enters the repository: pending and declined
+schemes remain usable for grading by anyone who can see them.
 
 With database access, from the `backend` directory:
 
 ```bash
-# Every database scheme, into backend/mark_schemes/
+# Every accepted database scheme, into backend/mark_schemes/
 python -m scripts.export_schemes
+
+# Also schemes not yet reviewed (declined schemes are never exported)
+python -m scripts.export_schemes --include-pending
 
 # One scheme, overwriting an existing file of the same name
 python -m scripts.export_schemes --version quadratic-any@0.2.0 --force
@@ -28,7 +36,7 @@ python -m scripts.export_schemes --version quadratic-any@0.2.0 --force
 
 The script uses `DATABASE_URL`, so `DATABASE_URL=… python -m scripts.export_schemes` exports
 from production. It never overwrites a file without `--force`, and it lists what it wrote and
-what it skipped.
+what it skipped. Each scheme written has its `exported_at` recorded in the database.
 
 Without database access, an admin downloads the same file from the hosted instance:
 

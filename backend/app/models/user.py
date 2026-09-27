@@ -40,7 +40,7 @@ class User(Base):
         "GradingSession", back_populates="owner"
     )
     mark_schemes: Mapped[list["MarkSchemeRecord"]] = relationship(
-        "MarkSchemeRecord", back_populates="owner"
+        "MarkSchemeRecord", back_populates="owner", foreign_keys="MarkSchemeRecord.owner_id"
     )
     marking_guides: Mapped[list["MarkingGuide"]] = relationship(
         "MarkingGuide", back_populates="owner"
