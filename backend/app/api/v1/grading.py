@@ -11,9 +11,11 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.grading_session import GradingSession, GradingStatus
 from app.models.mark_scheme import MarkSchemeRecord
+from app.models.question_paper import PaperStatus, QuestionPaper
 from app.models.question_result import QuestionResult
 from app.models.user import User
 from app.repositories.grading_repo import GradingSessionRepository
+from app.repositories.paper_repo import QuestionPaperRepository
 from app.repositories.result_repo import QuestionResultRepository
 from app.repositories.scheme_repo import MarkSchemeRepository
 from app.schemas.grading import (
@@ -32,6 +34,7 @@ from app.schemas.grading import (
     SchemeReviewOut,
     SchemeReviewRequest,
     SchemeTestRequest,
+    SessionPaperUpdate,
     VerdictHistoryOut,
     VerdictRequest,
 )
@@ -65,14 +68,26 @@ MAX_SCHEME_BYTES = 256 * 1024
 _SCHEME_SUFFIXES = (".yaml", ".yml")
 
 
+async def _owned_paper(session: AsyncSession, paper_id: UUID, user: User) -> QuestionPaper:
+    """A session may only use the caller's own papers, admins included; anything else is a 404."""
+    paper = await QuestionPaperRepository(session).get_for_owner(paper_id, user.id)
+    if paper is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question paper not found")
+    return paper
+
+
 @router.post("/upload", response_model=GradingSessionOut, status_code=status.HTTP_201_CREATED)
 async def upload(
     file: UploadFile = File(...),
     subject: str | None = Form(None),
+    question_paper_id: UUID | None = Form(None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> GradingSession:
     settings = get_settings()
+    # Before anything is stored, so a rejected paper leaves no orphaned file
+    if question_paper_id is not None:
+        await _owned_paper(session, question_paper_id, user)
     file_bytes = await file.read()
 
     # The client-declared content type is untrusted; identify the file from its own bytes.
@@ -101,6 +116,7 @@ async def upload(
         file_size_bytes=stored.size_bytes,
         storage_key=stored.key,
         subject=subject,
+        question_paper_id=question_paper_id,
     )
     await session.commit()
 
@@ -128,6 +144,29 @@ async def get_session(
     if grading_session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grading session not found")
 
+    return grading_session
+
+
+@router.patch("/sessions/{session_id}/paper", response_model=GradingSessionOut)
+async def set_session_paper(
+    session_id: UUID,
+    body: SessionPaperUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> GradingSession:
+    """Attach one of the caller's question papers to the session, or detach it with null.
+
+    Any paper the caller owns can be attached, extracted or not; the LLM grader only uses it
+    once it has been extracted.
+    """
+    grading_session = await GradingSessionRepository(session).get_for_owner(session_id, user.id)
+    if grading_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grading session not found")
+
+    if body.question_paper_id is not None:
+        await _owned_paper(session, body.question_paper_id, user)
+    grading_session.question_paper_id = body.question_paper_id
+    await session.commit()
     return grading_session
 
 
@@ -534,8 +573,19 @@ async def grade_llm(
                 detail=f"Mark scheme {body.scheme_version!r} not found",
             )
 
+    # The questions as set, when an extracted paper is attached; otherwise the model infers them
+    paper_markdown: str | None = None
+    if grading_session.question_paper_id is not None:
+        paper = await QuestionPaperRepository(session).get_for_owner(
+            grading_session.question_paper_id, grading_session.owner_id
+        )
+        if paper is not None and paper.status == PaperStatus.EXTRACTED and (paper.ocr_markdown or "").strip():
+            paper_markdown = paper.ocr_markdown
+
     grading_run_id = uuid.uuid4()
-    results = await grade_with_llm(grading_session, session, grading_run_id, scheme=scheme)
+    results = await grade_with_llm(
+        grading_session, session, grading_run_id, scheme=scheme, paper_markdown=paper_markdown
+    )
     await session.commit()
 
     return SchemeGradeResponse(

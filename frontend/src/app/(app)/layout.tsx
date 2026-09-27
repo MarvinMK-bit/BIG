@@ -26,6 +26,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/schemes" className="underline">
               Mark schemes
             </Link>
+            <Link href="/papers" className="underline">
+              Question papers
+            </Link>
             <Link href="/accuracy" className="underline">
               Accuracy
             </Link>

@@ -6,6 +6,8 @@ export type GradingSession = {
   mime_type: string;
   file_size_bytes: number;
   subject: string | null;
+  // The question paper the LLM grader marks against, if one is attached
+  question_paper_id: string | null;
   status: SessionStatus;
   ocr_engine: string | null;
   ocr_confidence: number | null;
@@ -36,6 +38,33 @@ export type MarkingGuide = {
 
 export function guideTitle(guide: MarkingGuide): string {
   return guide.title ?? guide.original_filename;
+}
+
+export type PaperStatus = "pending" | "processing" | "extracted" | "failed";
+
+// The questions that were set, for the LLM grader to mark against. Never graded; holds no
+// student work. One paper serves every script from a class.
+export type QuestionPaper = {
+  id: string;
+  title: string;
+  subject: string | null;
+  original_filename: string;
+  mime_type: string;
+  file_size_bytes: number;
+  status: PaperStatus;
+  // "docx-text" when the text was read from a Word document rather than OCR'd
+  ocr_engine: string | null;
+  ocr_markdown: string | null;
+  ocr_confidence: number | null;
+  error_message: string | null;
+  created_at: string;
+  extracted_at: string | null;
+};
+
+// The grader only uses a paper whose text has been extracted.
+// A plain boolean, not a type guard: an unusable paper is still a paper, not null.
+export function paperUsable(paper: QuestionPaper | null): boolean {
+  return paper?.status === "extracted" && !!paper.ocr_markdown?.trim();
 }
 
 export type Scheme = {

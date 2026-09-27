@@ -9,6 +9,7 @@ import type {
   GradingRun,
   Me,
   GradingSession,
+  QuestionPaper,
   QuestionResult,
   RunComparison,
   RunView,
@@ -17,6 +18,7 @@ import type {
 import { ExtractButton } from "./extract-button";
 import { ComparisonView } from "./comparison-view";
 import { GradePanel } from "./grade-panel";
+import { PaperSelector } from "./paper-selector";
 
 // Newest run for one grader path, with its results, so results survive a page refresh.
 async function latestRun(
@@ -35,11 +37,14 @@ async function latestRun(
 export default async function SessionPage(props: PageProps<"/sessions/[id]">) {
   const { id } = await props.params;
   const sid = encodeURIComponent(id);
-  const [session, schemes, runs] = await Promise.all([
+  const [session, schemes, runs, papers] = await Promise.all([
     backendGet<GradingSession>(`/grading/sessions/${sid}`, { notFound: true }),
     backendGet<Scheme[]>("/grading/schemes"),
     backendGet<GradingRun[]>(`/grading/sessions/${sid}/runs`),
+    backendGet<QuestionPaper[]>("/papers"),
   ]);
+  // Attached papers are always the caller's own, so they're in this list
+  const paper = papers.find((p) => p.id === session.question_paper_id) ?? null;
   const completed = session.status === "completed";
 
   const newestFirst = runs.toSorted((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
@@ -110,8 +115,11 @@ export default async function SessionPage(props: PageProps<"/sessions/[id]">) {
         )}
       </section>
 
+      <PaperSelector sessionId={session.id} attached={paper} papers={papers} />
+
       <GradePanel
         sessionId={session.id}
+        paper={paper}
         enabled={completed}
         schemes={schemes}
         blocks={blocks}

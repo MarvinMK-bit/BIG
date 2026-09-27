@@ -10,19 +10,28 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
-    from app.models.question_result import QuestionResult
     from app.models.user import User
 
 
-class GradingStatus(str, enum.Enum):
+class PaperStatus(str, enum.Enum):
     PENDING = "pending"
     PROCESSING = "processing"
-    COMPLETED = "completed"
+    EXTRACTED = "extracted"
     FAILED = "failed"
 
 
-class GradingSession(Base):
-    __tablename__ = "grading_sessions"
+class QuestionPaper(Base):
+    """The questions that were set, so the LLM grader can mark against what was actually asked.
+
+    A question paper states what was asked. It is never graded and holds no student work: the
+    students' answers live in grading sessions, each of which may point at one paper. One paper
+    serves many sessions, since a class is graded against a single upload.
+
+    ocr_markdown holds the paper's text however it was obtained: OCR for images and PDFs, and
+    the document's own text for DOCX, where ocr_engine records that no OCR was involved.
+    """
+
+    __tablename__ = "question_papers"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
@@ -30,22 +39,16 @@ class GradingSession(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False
     )
 
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    subject: Mapped[str | None] = mapped_column(String, nullable=True)
+
     original_filename: Mapped[str] = mapped_column(String, nullable=False)
     mime_type: Mapped[str] = mapped_column(String, nullable=False)
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     storage_key: Mapped[str] = mapped_column(String, nullable=False)
-    subject: Mapped[str | None] = mapped_column(String, nullable=True)
-    # The questions this script answers, for the LLM grader. One paper serves a whole class's
-    # sessions; deleting the paper detaches it rather than deleting the sessions.
-    question_paper_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("question_papers.id", ondelete="SET NULL"),
-        index=True,
-        nullable=True,
-    )
 
-    status: Mapped[GradingStatus] = mapped_column(
-        Enum(GradingStatus, name="grading_status"), nullable=False, default=GradingStatus.PENDING
+    status: Mapped[PaperStatus] = mapped_column(
+        Enum(PaperStatus, name="paper_status"), nullable=False, default=PaperStatus.PENDING
     )
 
     ocr_engine: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -55,9 +58,6 @@ class GradingSession(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    extracted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    owner: Mapped["User"] = relationship("User", back_populates="grading_sessions")
-    question_results: Mapped[list["QuestionResult"]] = relationship(
-        "QuestionResult", back_populates="session"
-    )
+    owner: Mapped["User"] = relationship("User", back_populates="question_papers")

@@ -8,7 +8,7 @@ import { muted as mutedColor } from "@/components/ui";
 import { LocalTime } from "@/components/local-time";
 import { postJson } from "@/lib/api-client";
 import type { ScriptBlock } from "@/lib/script";
-import { type RunView, type Scheme, schemeOriginLabel } from "@/lib/types";
+import { type QuestionPaper, type RunView, type Scheme, paperUsable, schemeOriginLabel } from "@/lib/types";
 
 type Path = "scheme" | "llm";
 
@@ -16,6 +16,47 @@ const muted = "text-sm text-zinc-600 dark:text-zinc-400";
 
 // Start of the backend's NoQuestionMarkersError message (services/grading/errors.py).
 const NO_MARKERS_PREFIX = "No question numbers found";
+
+// What the LLM run will be given besides the script, stated plainly either way.
+function LlmInputs({ paper, schemeVersion }: { paper: QuestionPaper | null; schemeVersion: string }) {
+  const usable = paperUsable(paper);
+  return (
+    <div className="flex flex-col gap-0.5 rounded bg-black/[.03] p-3 text-sm dark:bg-white/[.05]">
+      <p className="font-medium">In use for this run</p>
+      {!usable && !schemeVersion ? (
+        <p>
+          Neither a question paper nor a mark scheme is attached. The model works out the questions
+          from the script itself and sets its own marks.
+        </p>
+      ) : (
+        <>
+          <p>
+            Question paper:{" "}
+            {usable && paper ? (
+              <span className="font-medium">{paper.title}</span>
+            ) : (
+              "none — the model works out the questions from the script"
+            )}
+          </p>
+          <p>
+            Mark scheme:{" "}
+            {schemeVersion ? (
+              <span className="break-all font-medium">{schemeVersion}</span>
+            ) : (
+              "none — the model sets its own marks"
+            )}
+          </p>
+        </>
+      )}
+      {paper && !usable && (
+        <p className="text-amber-800 dark:text-amber-300">
+          &ldquo;{paper.title}&rdquo; is attached but its text hasn&apos;t been extracted, so it
+          won&apos;t be used.
+        </p>
+      )}
+    </div>
+  );
+}
 
 function RunResult({ view, title, blocks }: { view: RunView; title: string; blocks: ScriptBlock[] }) {
   return (
@@ -33,6 +74,7 @@ function RunResult({ view, title, blocks }: { view: RunView; title: string; bloc
 
 export function GradePanel({
   sessionId,
+  paper,
   enabled,
   schemes,
   blocks,
@@ -40,6 +82,8 @@ export function GradePanel({
   llmRun,
 }: {
   sessionId: string;
+  // The attached question paper, if any; used by the LLM path only
+  paper: QuestionPaper | null;
   enabled: boolean;
   schemes: Scheme[];
   blocks: ScriptBlock[];
@@ -208,6 +252,7 @@ export function GradePanel({
             </p>
           </div>
         )}
+        <LlmInputs paper={paper} schemeVersion={llmScheme} />
         <button onClick={() => grade("llm")} disabled={!enabled || busy} className={button}>
           {running("llm") ? "Grading…" : "Grade with LLM"}
         </button>

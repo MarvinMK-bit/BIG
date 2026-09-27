@@ -17,6 +17,8 @@ class GradingSessionOut(BaseModel):
     mime_type: str
     file_size_bytes: int
     subject: str | None
+    # The question paper the LLM grader marks against, if one is attached
+    question_paper_id: uuid.UUID | None
     status: GradingStatus
     ocr_engine: str | None
     ocr_confidence: float | None
@@ -24,6 +26,11 @@ class GradingSessionOut(BaseModel):
     error_message: str | None
     created_at: datetime
     completed_at: datetime | None
+
+
+class SessionPaperUpdate(BaseModel):
+    # Required but nullable: null detaches the current paper
+    question_paper_id: uuid.UUID | None
 
 
 class MarkBreakdownOut(BaseModel):

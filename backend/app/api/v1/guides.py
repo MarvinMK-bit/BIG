@@ -14,7 +14,7 @@ from app.models.user import User
 from app.repositories.guide_repo import MarkingGuideRepository
 from app.schemas.guides import GuideYamlOut, MarkingGuideOut
 from app.services.auth_service import get_current_admin
-from app.services.file_type import detect_mime_type
+from app.services.file_type import DOCX_MIME_TYPE, ZIP_MAGIC, detect_mime_type
 from app.services.guides import (
     build_guide_docx,
     build_scheme_yaml,
@@ -27,9 +27,7 @@ from app.services.storage import get_backend
 # Admin only: every route depends on get_current_admin, and guides are scoped to their owner.
 router = APIRouter(prefix="/guides", tags=["guides"])
 
-DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 MAX_DOCX_BYTES = 5 * 1024 * 1024
-_ZIP_MAGIC = b"PK\x03\x04"
 
 
 def _blank_to_none(value: str | None) -> str | None:
@@ -178,7 +176,7 @@ async def guide_to_yaml(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"The reviewed guide must be at most {MAX_DOCX_BYTES // (1024 * 1024)}MB.",
         )
-    if not raw.startswith(_ZIP_MAGIC):
+    if not raw.startswith(ZIP_MAGIC):
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Upload the reviewed guide as a Word document (.docx).",

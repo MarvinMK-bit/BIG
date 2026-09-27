@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.models.grading_session import GradingSession
     from app.models.mark_scheme import MarkSchemeRecord
     from app.models.marking_guide import MarkingGuide
+    from app.models.question_paper import QuestionPaper
     from app.models.question_result import QuestionResult
 
 
@@ -44,4 +45,7 @@ class User(Base):
     )
     marking_guides: Mapped[list["MarkingGuide"]] = relationship(
         "MarkingGuide", back_populates="owner"
+    )
+    question_papers: Mapped[list["QuestionPaper"]] = relationship(
+        "QuestionPaper", back_populates="owner"
     )

@@ -20,6 +20,7 @@ class GradingSessionRepository:
         file_size_bytes: int,
         storage_key: str,
         subject: str | None = None,
+        question_paper_id: UUID | None = None,
     ) -> GradingSession:
         grading_session = GradingSession(
             owner_id=owner_id,
@@ -28,6 +29,7 @@ class GradingSessionRepository:
             file_size_bytes=file_size_bytes,
             storage_key=storage_key,
             subject=subject,
+            question_paper_id=question_paper_id,
         )
         self.session.add(grading_session)
         await self.session.flush()

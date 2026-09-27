@@ -4,6 +4,7 @@ from app.models.mark_scheme import MarkSchemeRecord, MarkSchemeSource
 from app.models.marking_guide import GuideStatus, MarkingGuide
 from app.models.payout_attempt import AttemptStatus, PayoutAttempt
 from app.models.performance_report import PerformanceReport
+from app.models.question_paper import PaperStatus, QuestionPaper
 from app.models.question_result import GraderType, QuestionResult
 from app.models.reward import Reward, RewardReason, RewardStatus
 from app.models.user import User
@@ -20,8 +21,10 @@ __all__ = [
     "MarkSchemeRecord",
     "MarkSchemeSource",
     "MarkingGuide",
+    "PaperStatus",
     "PayoutAttempt",
     "PerformanceReport",
+    "QuestionPaper",
     "QuestionResult",
     "Reward",
     "RewardReason",
