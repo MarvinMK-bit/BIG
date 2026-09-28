@@ -234,9 +234,10 @@ def _question_summaries(scheme: MarkScheme) -> list[SchemeQuestionSummary]:
             number=q.number,
             sub_part=q.sub_part,
             matcher=q.matcher,
-            max_mark=float(q.max_mark),
+            max_mark=float(q.max_mark) if q.max_mark is not None else None,
             procedure=q.procedure if q.matcher == PROCEDURE_MATCHER else None,
-            mark_codes=[m.id for m in q.marks] if q.matcher == PROCEDURE_MATCHER else None,
+            # None too for a procedure question whose procedure supplies its marks
+            mark_codes=[m.id for m in q.marks] if q.matcher == PROCEDURE_MATCHER and q.marks else None,
         )
         for q in scheme.questions
     ]

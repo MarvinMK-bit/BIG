@@ -81,7 +81,8 @@ class SchemeQuestionSummary(BaseModel):
     number: str
     sub_part: str | None
     matcher: str
-    max_mark: float
+    # None for a procedure question whose procedure supplies its marks when grading
+    max_mark: float | None
     # Procedure questions only
     procedure: str | None = None
     mark_codes: list[str] | None = None

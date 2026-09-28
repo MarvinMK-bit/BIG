@@ -89,7 +89,8 @@ export type SchemeQuestionSummary = {
   number: string;
   sub_part: string | null;
   matcher: string;
-  max_mark: number;
+  // null for a procedure question whose procedure supplies its marks when grading
+  max_mark: number | null;
   // Procedure questions only
   procedure: string | null;
   mark_codes: string[] | null;

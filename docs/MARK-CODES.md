@@ -9,7 +9,7 @@ should not be read as such.
 | Code | Awarded for                                             | Per question              |
 |------|---------------------------------------------------------|---------------------------|
 | `T`  | the correct first step                                  | exactly one, always first |
-| `M`  | a subsequent correct step                               | one to four               |
+| `M`  | a subsequent correct step                               | one to four (none for `like_terms`) |
 | `A`  | the answer stated, e.g. `x = 2, x = 3`                  | at most one               |
 | `D`  | the concluding statement, e.g. `the roots are 2 and 3`  | at most one               |
 
@@ -43,6 +43,27 @@ questions:
       - id: D
         description: A concluding statement
 ```
+
+### Marks supplied by the procedure
+
+A procedure question may leave out `marks` and `max_mark` together. Its procedure then supplies
+the marks when grading, one mark each, and the question is worth as many marks as it returns.
+Giving one without the other is rejected, e.g. `question '1' has 'marks' but no 'max_mark': a
+procedure question declares both, or neither to let its procedure supply the marks`.
+
+```yaml
+questions:
+  - number: "1"
+    matcher: procedure
+    procedure: algebra
+```
+
+A procedure given no marks awards its `default_marks()`: for quadratic, simultaneous and
+like-terms, the same marks as their `-any` schemes. The algebra procedure has no default marks;
+it passes the empty list to whichever of them it routes to, so its total depends on the working.
+The grader takes the question's codes from the marks the procedure returns, and its `max_mark`
+from their count. An aligned LLM run is not given codes for such a question: it marks it
+as a whole, and the two graders are compared on the mark.
 
 ## Several M marks
 
@@ -119,5 +140,46 @@ procedure awards:
   in any case). This is a pattern check, not a model's judgement, and `D` is awarded only
   when `A`'s answer was stated correctly.
 
-The full rules are in the docstring of
+A scheme may still declare more than one `M`. If no method line earns the extra ones, they are
+awarded with a correct answer, and their reasons say the scheme declares more steps than the
+question type needs. The full rules are in the docstring of
 `backend/app/services/grading/procedures/quadratic.py`.
+
+Simultaneous linear equations in two unknowns take up to three working steps — eliminating or
+substituting for one unknown, solving for the other, substituting back — so `simultaneous-any`
+declares `T`, two `M`, `A` and `D`, out of 5. The simultaneous procedure awards:
+
+- `T` for lines 1 and 2 together, when they are two linear equations in the same two unknowns
+  with one solution, their coefficients read correctly;
+- each `M` for the next correct method line from line 3, where line 3 decides between
+  elimination and substitution;
+- `A` for the first line from line 4 on that states both values correctly;
+- `D` for a line after the answer that contains both values and a concluding word, from the
+  same list as the quadratic procedure.
+
+A scheme may declare a fourth `M`, more than the question type needs. If no method line earns
+it, it is awarded with a correct answer, and its reason says the scheme declares more steps than
+the question type needs. An `M` within the three whose step is skipped is lost, and by the
+prefix rule so is everything after it. The full rules are in the docstring of
+`backend/app/services/grading/procedures/simultaneous.py`.
+
+Collecting like terms in a linear expression is a one-step simplification, with no working
+between the expression and its result to reward, so the like-terms procedure takes `T`, `A` and
+`D` only; a scheme that declares an `M` for it is rejected. It awards:
+
+- `T` for line 1, when it is a linear expression in one unknown, its terms read;
+- `A` for the first step that equals the expression and is fully collected: `6x`, or `6x + 2`
+  where a constant remains. `3x + 3x` stated as `3x + 3x` is not an answer;
+- `D` for a line after the answer that contains the simplified result and a concluding word.
+
+The full rules are in the docstring of
+`backend/app/services/grading/procedures/like_terms.py`.
+
+The algebra procedure marks nothing itself. It routes the working to simultaneous (two linear
+equations in the same two unknowns on lines 1 and 2), quadratic (a quadratic equation on line
+1) or like-terms (a linear expression on line 1), in that order, and returns that procedure's
+marks, naming the route in the first mark's reason. `algebra-any` uses it with no marks
+declared. Working that fits none of the three earns zero on every mark, with the reason "this
+working does not match any question type the algebra scheme covers". With no marks declared,
+that is a single `T`. The rules are in the docstring of
+`backend/app/services/grading/procedures/algebra.py`.

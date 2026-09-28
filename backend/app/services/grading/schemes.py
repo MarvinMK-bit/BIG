@@ -41,13 +41,16 @@ class SchemeMark:
 @dataclass
 class SchemeQuestion:
     number: str
-    max_mark: Decimal
+    # None only for a procedure question that declares no marks: its procedure supplies them when
+    # grading, and the question is worth as many marks as it returns
+    max_mark: Decimal | None
     matcher: str
     # None only for the procedure matcher, which marks working rather than an answer
     answer: str | Decimal | None = None
     sub_part: str | None = None
     procedure: str | None = None
     params: dict[str, Any] = field(default_factory=dict)
+    # Empty for a procedure question whose procedure supplies its own marks
     marks: list[SchemeMark] = field(default_factory=list)
 
 
@@ -109,9 +112,12 @@ def _parse_mark(raw: Any, index: int, where: str) -> SchemeMark:
     return SchemeMark(id=mark_id, description=description, max_mark=max_mark)
 
 
-def check_mark_codes(codes: list[str], where: str) -> None:
-    """A procedure question's marks: T first and once, then 1 to MAX_STEP_MARKS M, then at most one
-    A, then at most one D. Raises ValueError naming the rule that was broken."""
+def check_mark_codes(
+    codes: list[str], where: str, steps: tuple[int, int] = (1, MAX_STEP_MARKS)
+) -> None:
+    """A procedure question's marks: T first and once, then 1 to MAX_STEP_MARKS M (or the range
+    in steps, for a procedure that takes another), then at most one A, then at most one D.
+    Raises ValueError naming the rule that was broken."""
     for code in codes:
         if code not in MARK_CODES:
             raise ValueError(
@@ -122,10 +128,13 @@ def check_mark_codes(codes: list[str], where: str) -> None:
         raise ValueError(f"{where} must start with {FIRST_STEP_CODE}, the correct first step")
     if codes.count(FIRST_STEP_CODE) != 1:
         raise ValueError(f"{where} must have exactly one {FIRST_STEP_CODE}")
-    steps = codes.count(STEP_CODE)
-    if not 1 <= steps <= MAX_STEP_MARKS:
+    fewest, most = steps
+    count = codes.count(STEP_CODE)
+    if most == 0 and count:
+        raise ValueError(f"{where} may not have {STEP_CODE} marks, got {count}")
+    if not fewest <= count <= most:
         raise ValueError(
-            f"{where} must have between 1 and {MAX_STEP_MARKS} {STEP_CODE} marks, got {steps}"
+            f"{where} must have between {fewest} and {most} {STEP_CODE} marks, got {count}"
         )
     for code in (ANSWER_CODE, CONCLUSION_CODE):
         if codes.count(code) > 1:
@@ -155,9 +164,23 @@ def mark_labels(codes: list[str]) -> list[str | None]:
     return labels
 
 
+def _step_marks(procedure: str) -> tuple[int, int]:
+    """How many M marks the named procedure takes; the usual range for one not registered, which
+    fails when grading instead."""
+    # Deferred: the procedures import this module
+    from app.services.grading.procedures import get_procedure
+
+    try:
+        return get_procedure(procedure).step_marks
+    except ValueError:
+        return (1, MAX_STEP_MARKS)
+
+
 def _parse_procedure_fields(
-    raw: dict[str, Any], max_mark: Decimal, where: str
-) -> tuple[str, dict[str, Any], list[SchemeMark]]:
+    raw: dict[str, Any], where: str
+) -> tuple[str, dict[str, Any], list[SchemeMark], Decimal | None]:
+    """The procedure, its params, the declared marks and max_mark. A question declares both marks
+    and max_mark, or neither, leaving its procedure to supply the marks when grading."""
     procedure = _require_str(raw, "procedure", where)
 
     params = raw.get("params")
@@ -166,19 +189,37 @@ def _parse_procedure_fields(
     elif not isinstance(params, dict):
         raise ValueError(f"{where} field 'params' must be a mapping, got {params!r}")
 
-    raw_marks = _require(raw, "marks", where)
+    has_marks, has_max_mark = raw.get("marks") is not None, raw.get("max_mark") is not None
+    if not has_marks and not has_max_mark:
+        return procedure, params, [], None
+    if has_marks != has_max_mark:
+        present, missing = ("marks", "max_mark") if has_marks else ("max_mark", "marks")
+        raise ValueError(
+            f"{where} has {present!r} but no {missing!r}: a procedure question declares both, "
+            "or neither to let its procedure supply the marks"
+        )
+    max_mark = _max_mark(raw, where)
+
+    raw_marks = raw["marks"]
     if not isinstance(raw_marks, list) or not raw_marks:
         raise ValueError(f"{where} field 'marks' must be a non-empty list")
     marks = [_parse_mark(item, i, where) for i, item in enumerate(raw_marks, start=1)]
 
-    check_mark_codes([mark.id for mark in marks], where)
+    check_mark_codes([mark.id for mark in marks], where, _step_marks(procedure))
 
     total = sum((mark.max_mark for mark in marks), Decimal(0))
     if total != max_mark:
         raise ValueError(
             f"{where} field 'max_mark' is {max_mark} but its marks add up to {total}"
         )
-    return procedure, params, marks
+    return procedure, params, marks, max_mark
+
+
+def _max_mark(raw: dict[str, Any], where: str) -> Decimal:
+    max_mark = _to_decimal(_require(raw, "max_mark", where), f"{where} field 'max_mark'")
+    if max_mark <= 0:
+        raise ValueError(f"{where} field 'max_mark' must be greater than zero, got {max_mark}")
+    return max_mark
 
 
 def _parse_question(raw: Any, index: int) -> SchemeQuestion:
@@ -199,15 +240,11 @@ def _parse_question(raw: Any, index: int) -> SchemeQuestion:
         valid = ", ".join(sorted(VALID_MATCHERS | {PROCEDURE_MATCHER}))
         raise ValueError(f"{where} has unknown matcher {matcher!r}. Valid matchers: {valid}")
 
-    max_mark = _to_decimal(_require(raw, "max_mark", where), f"{where} field 'max_mark'")
-    if max_mark <= 0:
-        raise ValueError(f"{where} field 'max_mark' must be greater than zero, got {max_mark}")
-
     if matcher == PROCEDURE_MATCHER:
-        procedure, params, marks = _parse_procedure_fields(raw, max_mark, where)
+        procedure, params, marks, procedure_max_mark = _parse_procedure_fields(raw, where)
         return SchemeQuestion(
             number=number,
-            max_mark=max_mark,
+            max_mark=procedure_max_mark,
             matcher=matcher,
             sub_part=sub_part,
             procedure=procedure,
@@ -215,6 +252,7 @@ def _parse_question(raw: Any, index: int) -> SchemeQuestion:
             marks=marks,
         )
 
+    max_mark = _max_mark(raw, where)
     raw_answer = _require(raw, "answer", where)
     answer: str | Decimal
     if matcher == "numeric":

@@ -47,7 +47,9 @@ function QuestionLine({ question }: { question: SchemeQuestionSummary }) {
         <span>{question.matcher} match</span>
       )}
       <span className={`text-xs ${muted}`}>
-        {formatMark(question.max_mark)} {question.max_mark === 1 ? "mark" : "marks"}
+        {question.max_mark === null
+          ? "marks set by the procedure"
+          : `${formatMark(question.max_mark)} ${question.max_mark === 1 ? "mark" : "marks"}`}
       </span>
     </li>
   );

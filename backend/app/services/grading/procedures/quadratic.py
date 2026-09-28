@@ -28,9 +28,11 @@ earned on its own line, and reads "T - 1" when earned and "T - 0" when not:
   T  line 1: the equation identified and its coefficients extracted.
   M  a correct factorisation or quadratic formula step, earned on line 2. A scheme may
      declare up to four; the second is earned on line 3, and so on, until the answer
-     line. Each is earned or lost on its own. An M whose step never appears before the
-     answer is lost; A is still earned. Method lines beyond the scheme's M marks must
-     still be correct, but earn nothing.
+     line. Method lines beyond the scheme's M marks must still be correct, but earn
+     nothing. A quadratic needs STEPS_NEEDED working step, so an M beyond the first that
+     no method line earned is not held against the student: it is awarded with a correct
+     answer, and its reason says the scheme declares more steps than this question type
+     needs. Losing it while A is earned would break the prefix rule (docs/MARK-CODES.md).
   A  the answer: the first line from line 3 on that states every root correctly, with
      every line before it verified. Rational roots must be written as plain numbers
      ("-2", "1/2", "0.5"), not left as an unsimplified expression. A line saying there
@@ -54,21 +56,27 @@ statements on a line; a line starting with "=" continues the previous line.
 """
 
 import re
-import string
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
 import sympy
-from sympy.parsing.sympy_parser import (
-    convert_xor,
-    implicit_multiplication_application,
-    parse_expr,
-    rationalize,
-    standard_transformations,
-)
 
-from app.services.grading.procedures.base import MarkAward, Procedure
+from app.services.grading.procedures.base import MarkAward, Procedure, marks_of
+from app.services.grading.procedures.common import (
+    CLAUSE_SPLIT_RE,
+    CONCLUDING_RE,
+    CONCLUDING_WORDS,
+    LETTERS,
+    PLAIN_NUMBER_RE,
+    PROSE_RE,
+    REPLACEMENTS,
+    STOP_NOTE,
+    equal,
+    parse_arithmetic,
+    rounding_tolerance,
+    show,
+)
 from app.services.grading.procedures.registry import register
 from app.services.grading.schemes import (
     ANSWER_CODE,
@@ -82,60 +90,9 @@ from app.services.grading.schemes import (
 FORMULA = "quadratic formula"
 FACTORISATION = "product-sum (factorisation)"
 
-# A D line needs one of these, as a whole word, ignoring case. Extend the list as needed.
-CONCLUDING_WORDS: tuple[str, ...] = (
-    "root",
-    "roots",
-    "solution",
-    "solutions",
-    "therefore",
-    "hence",
-    "thus",
-    "answer",
-    "so",
-)
-_CONCLUDING_RE = re.compile(
-    r"\b(?:" + "|".join(re.escape(word) for word in CONCLUDING_WORDS) + r")\b", re.IGNORECASE
-)
-# Words in a conclusion that aren't mathematics: removed before its values are read
-_PROSE_RE = re.compile(r"[A-Za-z]{2,}")
+# The one working step between the equation and its roots
+STEPS_NEEDED = 1
 
-_STOP_NOTE = (
-    "Marking stops at the first incorrect step: no later mark is awarded, even for "
-    "working that follows correctly from it. This is stricter than UNEB "
-    "follow-through marking."
-)
-
-_REPLACEMENTS: tuple[tuple[str, str], ...] = (
-    ("$", ""),
-    ("`", ""),
-    ("\\left", ""),
-    ("\\right", ""),
-    ("\\pm", "±"),
-    ("+/-", "±"),
-    ("\\times", "*"),
-    ("\\cdot", "*"),
-    ("\\sqrt", "√"),
-    ("\\frac", ""),
-    ("}{", ")/("),
-    ("{", "("),
-    ("}", ")"),
-    ("−", "-"),
-    ("–", "-"),
-    ("—", "-"),
-    ("×", "*"),
-    ("·", "*"),
-    ("÷", "/"),
-    ("²", "^2"),
-    ("Δ", "D"),
-    ("∆", "D"),
-    ("½", "(1/2)"),
-    ("¼", "(1/4)"),
-    ("¾", "(3/4)"),
-    ("⅓", "(1/3)"),
-    ("⅔", "(2/3)"),
-    ("∴", "therefore "),
-)
 _ANSWER_LABEL_RE = re.compile(r"^\s*(?:answer|ans)\s*[:=]\s*", re.IGNORECASE)
 _LABEL_RE = re.compile(
     r"^\s*(?:(?:solve|solution|therefore|hence|thus|so|the|roots?|numbers?|factors?|are|is)"
@@ -145,30 +102,11 @@ _LABEL_RE = re.compile(
 _ASIDE_RE = re.compile(
     r"\(\s*(?:twice|repeated(?:\s+root)?|equal\s+roots|double\s+root)\s*\)", re.IGNORECASE
 )
-_CLAUSE_SPLIT_RE = re.compile(r"\s+(?:or|and)\s+|\s*[,;&]\s*", re.IGNORECASE)
 _SQRT_OPEN_RE = re.compile(r"√\s*\(")
 _SQRT_TERM_RE = re.compile(r"√\s*(\d+(?:\.\d+)?|[A-Za-z])")
 _DENOMINATOR_RE = re.compile(
     r"/\s*(\d+(?:\.\d+)?(?:\s*\*\s*\d+(?:\.\d+)?|[A-Za-z]|\([^()]*\))+)"
 )
-_DECIMAL_RE = re.compile(r"\d\.(\d+)")
-_PLAIN_NUMBER_RE = re.compile(r"^\(?[+-]?\d+(?:\.\d+)?(?:/\d+)?\)?$")
-
-# Student text reaches parse_expr, which evaluates Python: allow arithmetic only
-_ALLOWED_RE = re.compile(r"^[0-9A-Za-z+\-*/^().\s]+$")
-_WORD_RE = re.compile(r"[A-Za-z]{2,}")
-# Exponents stay single digits, few and unchained, so 9^9^9^9 cannot stall the grader
-_EXPONENT_RE = re.compile(r"\^\s*(?:\(\s*\d\s*\)|\d(?![\d.]))(?!\s*\^)")
-_MAX_POWERS = 4
-_MAX_EXPRESSION_LENGTH = 160
-
-_TRANSFORMATIONS = standard_transformations + (
-    implicit_multiplication_application,
-    convert_xor,
-    rationalize,
-)
-# Every letter is a plain symbol, so "E", "I", "S" and friends aren't read as sympy constants
-_LETTERS: dict[str, sympy.Symbol] = {letter: sympy.Symbol(letter) for letter in string.ascii_letters}
 _NAMED_SYMBOLS = ("a", "b", "c", "D")
 
 
@@ -194,7 +132,7 @@ class _Equation:
         """Values for a, b, c and the discriminant D, unless the student's variable uses that letter."""
         values = {"a": self.a, "b": self.b, "c": self.c, "D": self.discriminant}
         return {
-            _LETTERS[name]: value for name, value in values.items() if _LETTERS[name] != self.variable
+            LETTERS[name]: value for name, value in values.items() if LETTERS[name] != self.variable
         }
 
 
@@ -220,7 +158,7 @@ class _Line:
 
 def _normalise(line: str) -> str:
     text = line
-    for old, new in _REPLACEMENTS:
+    for old, new in REPLACEMENTS:
         text = text.replace(old, new)
     text = _ANSWER_LABEL_RE.sub("", text)
     text = _LABEL_RE.sub("", text)
@@ -232,39 +170,9 @@ def _normalise(line: str) -> str:
     return " ".join(text.split()).rstrip(".").strip()
 
 
-def _tolerance(text: str) -> float:
-    places = [len(match) for match in _DECIMAL_RE.findall(text)]
-    return 0.5 * 10 ** -max(places) + 1e-9 if places else 0.0
-
-
-def _equal(u: sympy.Expr, v: sympy.Expr, tolerance: float) -> bool:
-    try:
-        difference = complex(sympy.N(u - v, 30))
-    except (TypeError, ValueError):
-        return False
-    return abs(difference) <= max(tolerance, 1e-20)
-
-
 def _parse(text: str, variable: sympy.Symbol) -> sympy.Expr:
-    compact = text.strip()
-    if (
-        not compact
-        or len(compact) > _MAX_EXPRESSION_LENGTH
-        or not _ALLOWED_RE.match(compact)
-        or "**" in compact
-        or compact.count("^") > _MAX_POWERS
-        or len(_EXPONENT_RE.findall(compact)) != compact.count("^")
-    ):
-        raise _StepError(f"'{text}' could not be read as mathematics")
-    allowed_letters = set(_NAMED_SYMBOLS) | {variable.name}
-    for word in _WORD_RE.findall(compact):
-        if word != "sqrt" and not set(word) <= allowed_letters:
-            raise _StepError(f"'{text}' could not be read as mathematics")
-    try:
-        expr = parse_expr(compact, local_dict=dict(_LETTERS), transformations=_TRANSFORMATIONS)
-    except Exception:
-        raise _StepError(f"'{text}' could not be read as mathematics") from None
-    if not isinstance(expr, sympy.Expr):
+    expr = parse_arithmetic(text, set(_NAMED_SYMBOLS) | {variable.name})
+    if expr is None:
         raise _StepError(f"'{text}' could not be read as mathematics")
     return expr
 
@@ -320,20 +228,16 @@ def _values(text: str, equation: _Equation) -> tuple[list[sympy.Expr], bool]:
     return values, formula
 
 
-def _show(value: sympy.Expr) -> str:
-    return sympy.sstr(sympy.nsimplify(value) if value.is_Float else value)
-
-
 def _check_chain(segments: list[str], value_sets: list[list[sympy.Expr]], tolerance: float) -> None:
     """Each segment must equal the one before it; it may pick out one branch of a ±."""
     for i in range(1, len(value_sets)):
         for value in value_sets[i]:
-            if not any(_equal(value, earlier, tolerance) for earlier in value_sets[i - 1]):
+            if not any(equal(value, earlier, tolerance) for earlier in value_sets[i - 1]):
                 raise _StepError(f"'{segments[i]}' does not equal '{segments[i - 1]}'")
 
 
 def _matching_root(value: sympy.Expr, equation: _Equation, tolerance: float) -> sympy.Expr | None:
-    return next((root for root in equation.roots if _equal(value, root, tolerance)), None)
+    return next((root for root in equation.roots if equal(value, root, tolerance)), None)
 
 
 def _is_root(value: sympy.Expr, equation: _Equation, tolerance: float) -> bool:
@@ -344,7 +248,7 @@ def _read_clause(text: str, equation: _Equation) -> _Clause:
     segments = [segment.strip() for segment in text.split("=")]
     if any(not segment for segment in segments):
         raise _StepError(f"'{text}' has nothing on one side of an equals sign")
-    tolerance = _tolerance(text)
+    tolerance = rounding_tolerance(text)
     variable = equation.variable
 
     label = segments[0].casefold()
@@ -352,9 +256,9 @@ def _read_clause(text: str, equation: _Equation) -> _Clause:
         target = equation.a * equation.c if label == "product" else equation.b
         for segment in segments[1:]:
             for value in _values(segment, equation)[0]:
-                if value.free_symbols or not _equal(value, target, tolerance):
+                if value.free_symbols or not equal(value, target, tolerance):
                     raise _StepError(
-                        f"the {label} should be {_show(target)} "
+                        f"the {label} should be {show(target)} "
                         f"({'ac' if label == 'product' else 'b'}), not {segment}"
                     )
         return _Clause(kind=label, route=FACTORISATION)
@@ -385,7 +289,7 @@ def _read_clause(text: str, equation: _Equation) -> _Clause:
         for value in value_sets[1]:
             if not _is_root(value, equation, tolerance):
                 raise _StepError(
-                    f"'{segments[1]}' gives {variable} = {_show(value)}, which is not a root"
+                    f"'{segments[1]}' gives {variable} = {show(value)}, which is not a root"
                 )
         _check_chain(segments[1:], value_sets[1:], tolerance)
         return _Clause(
@@ -433,7 +337,7 @@ def _read_line(line: str, equation: _Equation, previous_tail: str) -> _Line:
             route=None, route_hint=None, stated_roots=[], final_texts=[], tail="", no_real_roots=True
         )
 
-    clauses = [_read_clause(part, equation) for part in _CLAUSE_SPLIT_RE.split(text) if part.strip()]
+    clauses = [_read_clause(part, equation) for part in CLAUSE_SPLIT_RE.split(text) if part.strip()]
     if not clauses:
         raise _StepError("has no working on it")
 
@@ -441,7 +345,7 @@ def _read_line(line: str, equation: _Equation, previous_tail: str) -> _Line:
     others = [clause for clause in clauses if clause.kind != "number"]
     if numbers:
         values = [value for clause in numbers for value in clause.values]
-        tolerance = _tolerance(text)
+        tolerance = rounding_tolerance(text)
         shown = ", ".join(clause.final_text for clause in numbers)
         states_roots = any(clause.kind in ("root", "factor") for clause in others) or not others
         if states_roots and all(_is_root(value, equation, tolerance) for value in values):
@@ -450,8 +354,8 @@ def _read_line(line: str, equation: _Equation, previous_tail: str) -> _Line:
                 clause.values = [_matching_root(v, equation, tolerance) for v in clause.values]
         elif (
             len(values) == 2
-            and _equal(values[0] * values[1], equation.a * equation.c, tolerance)
-            and _equal(values[0] + values[1], equation.b, tolerance)
+            and equal(values[0] * values[1], equation.a * equation.c, tolerance)
+            and equal(values[0] + values[1], equation.b, tolerance)
         ):
             for clause in numbers:
                 clause.route = FACTORISATION
@@ -460,7 +364,7 @@ def _read_line(line: str, equation: _Equation, previous_tail: str) -> _Line:
         else:
             raise _StepError(
                 f"{shown} is neither the roots nor a pair with product ac = "
-                f"{_show(equation.a * equation.c)} and sum b = {_show(equation.b)}"
+                f"{show(equation.a * equation.c)} and sum b = {show(equation.b)}"
             )
 
     routes = {clause.route for clause in clauses} - {None}
@@ -485,10 +389,10 @@ def _answer_problem(line: _Line, equation: _Equation) -> str | None:
         return f"does not state the roots as {equation.variable} = .."
     missing = [root for root in equation.roots if root not in line.stated_roots]
     if missing:
-        shown = ", ".join(_show(root) for root in missing)
+        shown = ", ".join(show(root) for root in missing)
         return f"does not state every root: {equation.variable} = {shown} is missing"
     if all(root.is_rational for root in equation.roots) and not all(
-        _PLAIN_NUMBER_RE.match(text.replace(" ", "")) for text in line.final_texts
+        PLAIN_NUMBER_RE.match(text.replace(" ", "")) for text in line.final_texts
     ):
         return "leaves the roots as unsimplified expressions"
     return None
@@ -500,7 +404,7 @@ _NO_CONCLUDING_WORD = "has no concluding word"
 def _conclusion_problem(line: str, equation: _Equation) -> str | None:
     """Why the line isn't a concluding statement, or None when it is: it must hold a
     concluding word and the value of every root (or say there are no real roots)."""
-    if not _CONCLUDING_RE.search(line.replace("∴", " therefore ")):
+    if not CONCLUDING_RE.search(line.replace("∴", " therefore ")):
         return _NO_CONCLUDING_WORD
     text = _normalise(line)
     if "no real" in text.casefold():
@@ -508,9 +412,9 @@ def _conclusion_problem(line: str, equation: _Equation) -> str | None:
             return "says there are no real roots, but the equation has real roots"
         return None
     # Prose is dropped, keeping sqrt; what's left is read clause by clause
-    text = _PROSE_RE.sub(lambda m: m.group(0) if m.group(0) == "sqrt" else ";", text)
+    text = PROSE_RE.sub(lambda m: m.group(0) if m.group(0) == "sqrt" else ";", text)
     found: list[tuple[sympy.Expr, float]] = []
-    for clause in _CLAUSE_SPLIT_RE.split(text):
+    for clause in CLAUSE_SPLIT_RE.split(text):
         value_text = clause.split("=")[-1].strip()
         if not value_text:
             continue
@@ -518,12 +422,12 @@ def _conclusion_problem(line: str, equation: _Equation) -> str | None:
             values, _ = _values(value_text, equation)
         except _StepError:
             continue
-        found.extend((value, _tolerance(value_text)) for value in values if not value.free_symbols)
+        found.extend((value, rounding_tolerance(value_text)) for value in values if not value.free_symbols)
     missing = [
-        root for root in equation.roots if not any(_equal(v, root, tol) for v, tol in found)
+        root for root in equation.roots if not any(equal(v, root, tol) for v, tol in found)
     ]
     if missing:
-        shown = ", ".join(_show(root) for root in missing)
+        shown = ", ".join(show(root) for root in missing)
         return f"does not give the root{'s' if len(missing) > 1 else ''} {shown}"
     return None
 
@@ -538,11 +442,17 @@ class QuadraticProcedure(Procedure):
 
     name = "quadratic"
 
+    def default_marks(self) -> list[SchemeMark]:
+        # The same as quadratic-any
+        return marks_of(FIRST_STEP_CODE, STEP_CODE, ANSWER_CODE, CONCLUSION_CODE)
+
     def grade(
         self, working: list[str], params: dict[str, Any], marks: list[SchemeMark]
     ) -> list[MarkAward]:
         if params:
             raise ValueError(f"quadratic procedure has no parameter(s) {', '.join(sorted(params))}")
+        # None declared: the procedure's own
+        marks = marks or self.default_marks()
         codes = [mark.id for mark in marks]
         check_mark_codes(codes, "quadratic procedure scheme")
         lines = [line.strip() for line in working if line.strip()]
@@ -556,6 +466,14 @@ class QuadraticProcedure(Procedure):
     def _mark(lines: list[str], codes: list[str]) -> list[_Outcome]:
         """Each mark's (earned, reason), in the scheme's order."""
         outcomes: list[_Outcome | None] = [None] * len(codes)
+        step_marks = [i for i, code in enumerate(codes) if code == STEP_CODE]
+        # M marks beyond the step this question type needs
+        surplus = set(step_marks[STEPS_NEEDED:])
+        surplus_note = (
+            f"The scheme declares {len(step_marks)} M marks, more steps than this question type "
+            f"needs: a quadratic takes {STEPS_NEEDED} working step (a factorisation or quadratic "
+            "formula step), so this M stands for no step of the working."
+        )
 
         def unfilled(code: str | None = None) -> list[int]:
             return [
@@ -564,7 +482,8 @@ class QuadraticProcedure(Procedure):
 
         def fill(code: str | None, outcome: _Outcome) -> None:
             for i in unfilled(code):
-                outcomes[i] = outcome
+                earned, reason = outcome
+                outcomes[i] = (earned, f"{reason} {surplus_note}" if i in surplus else reason)
 
         def result() -> list[_Outcome]:
             assert all(outcome is not None for outcome in outcomes)
@@ -583,9 +502,11 @@ class QuadraticProcedure(Procedure):
             answer_lost = bool(unfilled(ANSWER_CODE))
             remaining = unfilled()
             # The first mark still open is the one this line would have earned
-            outcomes[remaining[0]] = (False, f"{at(number)} {why}. {_STOP_NOTE}")
+            outcomes[remaining[0]] = (False, f"{at(number)} {why}. {STOP_NOTE}")
+            if remaining[0] in surplus:
+                outcomes[remaining[0]] = (False, f"{outcomes[remaining[0]][1]} {surplus_note}")
             later = f"Not awarded: marking stopped at line {number} '{lines[number - 1]}' ({why})."
-            fill(None, (False, f"{later} {_STOP_NOTE}"))
+            fill(None, (False, f"{later} {STOP_NOTE}"))
             # Line 1 failing leaves no equation to check an answer against
             if answer_lost and number > 1 and later_answer_is_correct(number):
                 for i in [i for i, c in enumerate(codes) if c == ANSWER_CODE]:
@@ -615,7 +536,7 @@ class QuadraticProcedure(Procedure):
             (
                 True,
                 f"{at(1)}: equation in {equation.variable} identified, "
-                f"a = {_show(equation.a)}, b = {_show(equation.b)}, c = {_show(equation.c)}.",
+                f"a = {show(equation.a)}, b = {show(equation.b)}, c = {show(equation.c)}.",
             ),
         )
 
@@ -652,7 +573,12 @@ class QuadraticProcedure(Procedure):
         assert last is not None
         if answer_line is None:
             final = at(len(lines))
-            fill(STEP_CODE, (False, f"Not awarded: no further {route} step shown."))
+            for i in unfilled(STEP_CODE):
+                outcomes[i] = (
+                    False,
+                    f"{surplus_note} It is awarded only with a correct answer, and {final} ends "
+                    "the working without the roots stated.",
+                )
             problem = _answer_problem(last, equation) or "does not state the roots on a line after line 2"
             fill(ANSWER_CODE, (False, f"Not awarded: every step is correct, but {final} {problem}."))
             fill(
@@ -664,15 +590,14 @@ class QuadraticProcedure(Procedure):
             )
             return result()
 
-        fill(
-            STEP_CODE,
-            (False, f"Not awarded: no further {route} step before the answer on line {answer_line}."),
-        )
         answer_at = at(answer_line)
+        # Line 2 always earns the first M, so any still open is one the question doesn't need
+        for i in unfilled(STEP_CODE):
+            outcomes[i] = (True, f"{answer_at}: {surplus_note} It is awarded with the correct answer.")
         if last.no_real_roots:
             fill(ANSWER_CODE, (True, f"{answer_at}: correctly states there are no real roots."))
         else:
-            stated = ", ".join(f"{equation.variable} = {_show(root)}" for root in equation.roots)
+            stated = ", ".join(f"{equation.variable} = {show(root)}" for root in equation.roots)
             fill(ANSWER_CODE, (True, f"{answer_at}: roots {stated} stated, every step verified."))
 
         if not unfilled(CONCLUSION_CODE):

@@ -1,0 +1,30 @@
+name: simultaneous-any
+version: 0.1.0
+subject: mathematics
+source: manual
+description: >-
+  Solving a pair of simultaneous linear equations in two unknowns, marked on the working
+  rather than the final answer. The scheme carries no fixed system: it reads the two
+  equations from the student's first two lines, so it marks ANY such pair with a single
+  solution. Either elimination or substitution is accepted, decided by the student's third
+  line, and every line is checked algebraically. Marks use BIG's mark codes: T for
+  identifying the system, M for each working step, A for both values stated and D for the
+  concluding statement. Marking stops at the first incorrect step and nothing after it is
+  credited, not even a correct final answer. This is deliberately stricter than UNEB
+  follow-through marking.
+questions:
+  - number: "1"
+    max_mark: 5
+    matcher: procedure
+    procedure: simultaneous
+    marks:
+      - id: T
+        description: Both equations identified in the same two unknowns, coefficients extracted
+      - id: M
+        description: Correct elimination or substitution step, e.g. eliminating one unknown
+      - id: M
+        description: A further correct step, e.g. solving for the remaining unknown
+      - id: A
+        description: Both values stated correctly, e.g. "x = 3, y = 2"
+      - id: D
+        description: A concluding statement, e.g. "therefore the solution is x = 3, y = 2"

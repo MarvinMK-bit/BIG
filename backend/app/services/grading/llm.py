@@ -131,7 +131,9 @@ class _ExpectedQuestion:
     """What an aligned run asked for on one question."""
 
     label: str
-    max_mark: Decimal
+    # None for a procedure question that declares no marks: its structure depends on the
+    # working, so the model marks it as a whole and chooses max_mark itself
+    max_mark: Decimal | None
     # Mark codes in order, with each mark's worth; empty for a question marked as a whole
     codes: list[str]
     mark_values: list[Decimal]
@@ -162,6 +164,12 @@ def _system_prompt(
         return prompt
     lines = []
     for item in expected.values():
+        if item.max_mark is None:
+            lines.append(
+                f"- Question {item.label}: no fixed total; mark it as a whole, taking max_mark "
+                "from the marks printed on the paper, or 1 if none are shown"
+            )
+            continue
         line = f"- Question {item.label}: {item.max_mark.normalize():f} marks"
         if item.codes:
             line += f"; mark codes, in order: {', '.join(item.codes)}"
@@ -295,7 +303,7 @@ def _build_result(
             raise ValueError(f"{where}.max_mark must be greater than zero, got {max_mark}")
         if not 0 <= mark_awarded <= max_mark:
             raise ValueError(f"{where}.mark_awarded must be between 0 and max_mark, got {mark_awarded}")
-        if asked is not None and max_mark != asked.max_mark:
+        if asked is not None and asked.max_mark is not None and max_mark != asked.max_mark:
             raise ValueError(
                 f"{where}.max_mark is {max_mark} but question {asked.label} is worth {asked.max_mark}"
             )
