@@ -1,5 +1,6 @@
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import PurePath
 from uuid import UUID
@@ -44,9 +45,12 @@ from app.schemas.grading import (
 from app.services.annotate import (
     SUPPORTED_MIME_TYPES,
     Placement,
+    ScriptAnnotations,
     Style,
     annotations_for_run,
+    mask_to_pdf,
     render_annotated_script,
+    render_mask,
 )
 from app.services.auth_service import get_current_admin, get_current_user
 from app.services.file_type import detect_mime_type
@@ -672,22 +676,26 @@ async def get_run_results(
 PLACEMENT_HEADER = "X-Annotation-Placement"
 
 
-@router.get(
-    "/sessions/{session_id}/annotated",
-    response_class=Response,
-    responses={200: {"content": {"image/png": {}}}},
-)
-async def get_annotated_script(
-    session_id: UUID,
-    run_id: UUID | None = None,
-    style: Style = "symbols",
-    placement: Placement = "lines",
-    user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_db),
-) -> Response:
-    """The script as a PNG with a run's marks drawn in a margin beside it: the given run, else
-    the newest. The placement used is in the X-Annotation-Placement header, "margin" when line
-    placement couldn't match the script's lines."""
+@dataclass
+class _ScriptToAnnotate:
+    grading_session: GradingSession
+    image: bytes
+    annotations: ScriptAnnotations
+
+    def headers(self, placement: Placement, suffix: str) -> dict[str, str]:
+        original = PurePath(self.grading_session.original_filename).stem
+        stem = re.sub(r"[^A-Za-z0-9._-]+", "-", original).strip("-.") or "script"
+        return {
+            PLACEMENT_HEADER: placement,
+            "Content-Disposition": f'inline; filename="{stem}-{suffix}"',
+            "Cache-Control": "private, no-store",
+        }
+
+
+async def _script_to_annotate(
+    session_id: UUID, run_id: UUID | None, user: User, session: AsyncSession
+) -> _ScriptToAnnotate:
+    """The caller's script, its image and a run's marks: the given run, else the newest."""
     grading_session = await GradingSessionRepository(session).get_for_owner(session_id, user.id)
     if grading_session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grading session not found")
@@ -716,26 +724,95 @@ async def get_annotated_script(
         )
 
     image = await get_backend(get_settings().STORAGE_BACKEND).load(grading_session.storage_key)
-    annotations = annotations_for_run(results, grading_session.ocr_markdown)
+    return _ScriptToAnnotate(
+        grading_session=grading_session,
+        image=image,
+        annotations=annotations_for_run(results, grading_session.ocr_markdown),
+    )
+
+
+@router.get(
+    "/sessions/{session_id}/annotated",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+async def get_annotated_script(
+    session_id: UUID,
+    run_id: UUID | None = None,
+    style: Style = "symbols",
+    placement: Placement = "lines",
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> Response:
+    """The script as a PNG with a run's marks drawn in a margin beside it: the given run, else
+    the newest. The placement used is in the X-Annotation-Placement header, "margin" when line
+    placement couldn't match the script's lines."""
+    script = await _script_to_annotate(session_id, run_id, user, session)
     # Drawing a full-size photo takes a second or two: kept off the event loop
     png, used = await run_in_threadpool(
         render_annotated_script,
-        image,
-        grading_session.mime_type,
-        annotations,
+        script.image,
+        script.grading_session.mime_type,
+        script.annotations,
         style=style,
         placement=placement,
     )
-    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", PurePath(grading_session.original_filename).stem).strip("-.")
-    return Response(
-        content=png,
-        media_type="image/png",
-        headers={
-            PLACEMENT_HEADER: used,
-            "Content-Disposition": f'inline; filename="{stem or "script"}-annotated.png"',
-            "Cache-Control": "private, no-store",
-        },
+    return Response(content=png, media_type="image/png", headers=script.headers(used, "annotated.png"))
+
+
+@router.get(
+    "/sessions/{session_id}/mask",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+async def get_mask(
+    session_id: UUID,
+    run_id: UUID | None = None,
+    style: Style = "symbols",
+    placement: Placement = "lines",
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> Response:
+    """The Mask of Marks as a PNG: the annotated script's marks alone, on white, the size of the
+    page, for printing onto the student's original paper. Parameters and the placement header
+    are as for the annotated script."""
+    script = await _script_to_annotate(session_id, run_id, user, session)
+    png, used = await run_in_threadpool(
+        render_mask,
+        script.image,
+        script.grading_session.mime_type,
+        script.annotations,
+        style=style,
+        placement=placement,
     )
+    return Response(content=png, media_type="image/png", headers=script.headers(used, "mask.png"))
+
+
+@router.get(
+    "/sessions/{session_id}/mask.pdf",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+async def get_mask_pdf(
+    session_id: UUID,
+    run_id: UUID | None = None,
+    style: Style = "symbols",
+    placement: Placement = "lines",
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> Response:
+    """The Mask of Marks as a one-page PDF on the PAPER_SIZE setting's paper, ready to print
+    onto the student's original script."""
+    script = await _script_to_annotate(session_id, run_id, user, session)
+
+    def build() -> tuple[bytes, Placement]:
+        png, used = render_mask(
+            script.image, script.grading_session.mime_type, script.annotations, style, placement
+        )
+        return mask_to_pdf(png, get_settings().PAPER_SIZE), used
+
+    pdf, used = await run_in_threadpool(build)
+    return Response(content=pdf, media_type="application/pdf", headers=script.headers(used, "mask.pdf"))
 
 
 @router.patch("/results/{result_id}/verdict", response_model=QuestionResultOut)

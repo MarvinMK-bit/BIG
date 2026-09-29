@@ -1,6 +1,6 @@
 import json
 from functools import lru_cache
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     OCR_MODEL: str = "claude-sonnet-4-5"
 
     MARK_SCHEMES_DIR: str = "./mark_schemes"
+
+    # Paper the Mask of Marks PDF is laid out for: the size of the scripts fed back through the printer
+    PAPER_SIZE: Literal["A4", "Letter"] = "A4"
 
     ANTHROPIC_API_KEY: str | None = None
     LLM_GRADER_MODEL: str = "claude-sonnet-4-5"

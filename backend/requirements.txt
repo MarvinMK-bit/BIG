@@ -32,3 +32,6 @@ sympy==1.14.0
 # Annotated script images: line detection and drawing
 pillow==12.3.0
 numpy==2.5.3
+
+# Mask of Marks PDF, for printing marks onto the student's original script
+reportlab==5.0.1

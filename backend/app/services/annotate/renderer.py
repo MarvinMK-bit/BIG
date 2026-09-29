@@ -168,15 +168,22 @@ class _Canvas:
         return parts
 
 
-def _layout(items: list[_Item], top: float, gap: float) -> float:
+def _layout(items: list[_Item], top: float, limit: float, gap: float) -> None:
     """Place items down the margin in order, each at its target where it fits, else just below
-    the one before. Returns the bottom of the last."""
+    the one before, and none below limit: when they run past it, they are packed upwards from
+    it, still in order. Only when there are too many to fit between top and limit do any rise
+    above top."""
     bottom = top
     for item in items:
         wanted = item.target - item.height / 2 if item.anchor == "centre" else item.target
         item.top = max(wanted, bottom)
         bottom = item.top + item.height + gap
-    return bottom
+    ceiling = limit
+    for item in reversed(items):
+        if item.top + item.height <= ceiling:
+            break
+        item.top = ceiling - item.height
+        ceiling = item.top - gap
 
 
 def _score(question: QuestionAnnotation) -> _Item:
@@ -313,6 +320,145 @@ def _prepare_page(image_bytes: bytes, mime_type: str) -> Image.Image:
     return page
 
 
+def registration_inset(width: int, height: int) -> tuple[int, int]:
+    """Where the corner registration crosses sit: their centre's inset from each edge, and the
+    length of each arm, in pixels."""
+    side = min(width, height)
+    return max(8, round(side * 0.03)), max(5, round(side * 0.018))
+
+
+@dataclass
+class MarkPlan:
+    """Where everything goes, in the annotated image's coordinates: the page at the left, the
+    margin column from page_width to page_width + canvas.margin."""
+
+    page: Image.Image
+    canvas: _Canvas
+    items: list[_Item]
+    total_text: str
+    footer: list[str]
+    footer_line: float
+    footer_height: float
+    placement: Placement
+    # Whether every item lies between the top reserve and the total; and the fraction of the
+    # items' height that room holds
+    fits: bool = True
+    fits_ratio: float = 1.0
+
+
+def plan_marks(
+    image_bytes: bytes, mime_type: str, annotations: ScriptAnnotations, style: Style, placement: Placement
+) -> MarkPlan:
+    page = _prepare_page(image_bytes, mime_type)
+    width, height = page.size
+
+    used: Placement = placement
+    bands: list[TextBand] | None = None
+    if placement == "lines":
+        found = detect_text_bands(image_bytes)
+        lines = ink_line_indices(annotations.ocr_markdown)
+        if found and lines and abs(len(found) - len(lines)) <= 1:
+            bands = found
+        else:
+            used = "margin"
+
+    unit = _unit_for(height, max(1, round(width * MARGIN_FRACTION)), bands)
+    while True:
+        plan = _plan_at(page, annotations, style, used, bands, unit)
+        if plan.fits or unit <= _MIN_UNIT:
+            return plan
+        # Everything must fit on the page, which the mask can't grow past: smaller marks, same order
+        unit = max(_MIN_UNIT, min(unit - 1, math.floor(unit * plan.fits_ratio)))
+
+
+# The smallest tick, in pixels, marks shrink to so that a long script's marks fit the page
+_MIN_UNIT = 6
+
+
+def _plan_at(
+    page: Image.Image,
+    annotations: ScriptAnnotations,
+    style: Style,
+    used: Placement,
+    bands: list[TextBand] | None,
+    unit: int,
+) -> MarkPlan:
+    width, height = page.size
+    canvas = _Canvas(width, unit)
+    # Clear of the corner registration crosses, so the mask and the annotated image match
+    inset, arm = registration_inset(width, height)
+    reserved = max(float(canvas.pad), inset + arm + canvas.gap)
+
+    total_text = f"Total {_number(annotations.total_awarded)}/{_number(annotations.total_max)}"
+    footer_parts = ["Marked by BIG", annotations.marked_on.isoformat()]
+    if annotations.scheme_version:
+        footer_parts.append(f"Scheme {annotations.scheme_version}")
+    footer = canvas.footer_lines(footer_parts)
+    total_height = canvas.text_size(total_text, canvas.total_font)[1]
+    footer_line = canvas.text_size("Mg", canvas.footer_font)[1]
+    footer_height = len(footer) * footer_line + (len(footer) - 1) * canvas.gap
+
+    items = (
+        _line_items(annotations, bands, height) if bands else _margin_items(annotations, height, reserved)
+    )
+    for item in items:
+        canvas.measure(item, style)
+    # Marks stop above the total and footer, which sit above the bottom corner crosses
+    limit = height - reserved - footer_height - canvas.gap - total_height - canvas.gap
+    _layout(items, reserved, limit, canvas.gap)
+    needed = sum(item.height for item in items) + canvas.gap * max(0, len(items) - 1)
+    return MarkPlan(
+        fits=not items or items[0].top >= reserved,
+        fits_ratio=(limit - reserved) / needed if needed else 1.0,
+        page=page,
+        canvas=canvas,
+        items=items,
+        total_text=total_text,
+        footer=footer,
+        footer_line=footer_line,
+        footer_height=footer_height,
+        placement=used,
+    )
+
+
+def draw_marks(draw: ImageDraw.ImageDraw, plan: MarkPlan, style: Style, dx: float = 0.0) -> None:
+    """Every mark, score, the total and the footer, shifted dx pixels across from where the
+    annotated image has them."""
+    canvas = plan.canvas
+    left, right = canvas.left + dx, canvas.right + dx
+    for item in plan.items:
+        if item.kind == "score":
+            draw.text((left, item.top), item.text, fill=_GREY, font=canvas.score_font, anchor="lt")
+            continue
+        y = item.top
+        for row in canvas.rows_of(item.marks, style):
+            x = left
+            for mark, glyph, glyph_width in row:
+                if glyph == "tick":
+                    _draw_tick(draw, x, y, canvas.unit)
+                elif glyph == "cross":
+                    _draw_cross(draw, x, y, canvas.unit)
+                else:
+                    colour = _colour(mark.awarded, mark.max_mark)
+                    draw.text((x, y + canvas.unit / 2), glyph, fill=colour, font=canvas.mark_font, anchor="lm")
+                x += glyph_width + canvas.spacing(style)
+            y += canvas.unit + canvas.gap
+
+    width, height = plan.page.size
+    inset, arm = registration_inset(width, height)
+    y = height - max(float(canvas.pad), inset + arm + canvas.gap) - plan.footer_height
+    draw.text((right, y - canvas.gap), plan.total_text, fill=(0, 0, 0), font=canvas.total_font, anchor="rb")
+    for line in plan.footer:
+        draw.text((right, y), line, fill=_GREY, font=canvas.footer_font, anchor="rt")
+        y += plan.footer_line + canvas.gap
+
+
+def png_bytes(image: Image.Image) -> bytes:
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG", compress_level=6)
+    return buffer.getvalue()
+
+
 def render_annotated_script(
     image_bytes: bytes,
     mime_type: str,
@@ -333,67 +479,11 @@ def render_annotated_script(
 
     JPEG, PNG and WebP scripts only: a PDF raises NotImplementedError.
     """
-    page = _prepare_page(image_bytes, mime_type)
-    width, height = page.size
-
-    used: Placement = placement
-    bands: list[TextBand] | None = None
-    if placement == "lines":
-        found = detect_text_bands(image_bytes)
-        lines = ink_line_indices(annotations.ocr_markdown)
-        if found and lines and abs(len(found) - len(lines)) <= 1:
-            bands = found
-        else:
-            used = "margin"
-
-    canvas = _Canvas(width, _unit_for(height, max(1, round(width * MARGIN_FRACTION)), bands))
-    top = float(canvas.pad)
-    items = _line_items(annotations, bands, height) if bands else _margin_items(annotations, height, top)
-    for item in items:
-        canvas.measure(item, style)
-    content_bottom = _layout(items, top, canvas.gap)
-
-    total_text = f"Total {_number(annotations.total_awarded)}/{_number(annotations.total_max)}"
-    footer_parts = ["Marked by BIG", annotations.marked_on.isoformat()]
-    if annotations.scheme_version:
-        footer_parts.append(f"Scheme {annotations.scheme_version}")
-    footer = canvas.footer_lines(footer_parts)
-    total_height = canvas.text_size(total_text, canvas.total_font)[1]
-    footer_line = canvas.text_size("Mg", canvas.footer_font)[1]
-    footer_height = len(footer) * footer_line + (len(footer) - 1) * canvas.gap
-    # Taller than the page only when the marks run past its foot: the page is never covered
-    needed = content_bottom + canvas.gap + total_height + canvas.gap + footer_height + canvas.pad
-    out_height = max(height, math.ceil(needed))
-
-    out = Image.new("RGB", (width + canvas.margin, out_height), _WHITE)
-    out.paste(page, (0, 0))
+    plan = plan_marks(image_bytes, mime_type, annotations, style, placement)
+    width, height = plan.page.size
+    out = Image.new("RGB", (width + plan.canvas.margin, height), _WHITE)
+    out.paste(plan.page, (0, 0))
     draw = ImageDraw.Draw(out)
-    draw.line([(width, 0), (width, out_height)], fill=_RULE, width=max(1, canvas.unit // 12))
-
-    for item in items:
-        if item.kind == "score":
-            draw.text((canvas.left, item.top), item.text, fill=_GREY, font=canvas.score_font, anchor="lt")
-            continue
-        y = item.top
-        for row in canvas.rows_of(item.marks, style):
-            x = float(canvas.left)
-            for mark, glyph, glyph_width in row:
-                if glyph == "tick":
-                    _draw_tick(draw, x, y, canvas.unit)
-                elif glyph == "cross":
-                    _draw_cross(draw, x, y, canvas.unit)
-                else:
-                    colour = _colour(mark.awarded, mark.max_mark)
-                    draw.text((x, y + canvas.unit / 2), glyph, fill=colour, font=canvas.mark_font, anchor="lm")
-                x += glyph_width + canvas.spacing(style)
-            y += canvas.unit + canvas.gap
-
-    y = out_height - canvas.pad - footer_height
-    draw.text((canvas.right, y - canvas.gap), total_text, fill=(0, 0, 0), font=canvas.total_font, anchor="rb")
-    for line in footer:
-        draw.text((canvas.right, y), line, fill=_GREY, font=canvas.footer_font, anchor="rt")
-        y += footer_line + canvas.gap
-
-    buffer = io.BytesIO()
-    out.save(buffer, format="PNG", compress_level=6)
-    return buffer.getvalue(), used
+    draw.line([(width, 0), (width, height)], fill=_RULE, width=max(1, plan.canvas.unit // 12))
+    draw_marks(draw, plan, style)
+    return png_bytes(out), plan.placement
