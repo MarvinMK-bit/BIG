@@ -1,10 +1,13 @@
+import re
 import uuid
 from datetime import UTC, datetime
+from pathlib import PurePath
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.exc import IntegrityError
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -37,6 +40,13 @@ from app.schemas.grading import (
     SessionPaperUpdate,
     VerdictHistoryOut,
     VerdictRequest,
+)
+from app.services.annotate import (
+    SUPPORTED_MIME_TYPES,
+    Placement,
+    Style,
+    annotations_for_run,
+    render_annotated_script,
 )
 from app.services.auth_service import get_current_admin, get_current_user
 from app.services.file_type import detect_mime_type
@@ -656,6 +666,76 @@ async def get_run_results(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grading run not found")
 
     return results
+
+
+# The placement render_annotated_script actually used: "margin" when line placement fell back
+PLACEMENT_HEADER = "X-Annotation-Placement"
+
+
+@router.get(
+    "/sessions/{session_id}/annotated",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+async def get_annotated_script(
+    session_id: UUID,
+    run_id: UUID | None = None,
+    style: Style = "symbols",
+    placement: Placement = "lines",
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> Response:
+    """The script as a PNG with a run's marks drawn in a margin beside it: the given run, else
+    the newest. The placement used is in the X-Annotation-Placement header, "margin" when line
+    placement couldn't match the script's lines."""
+    grading_session = await GradingSessionRepository(session).get_for_owner(session_id, user.id)
+    if grading_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grading session not found")
+
+    repo = QuestionResultRepository(session)
+    if run_id is None:
+        runs = await repo.list_runs_for_session(session_id, user.id)
+        if not runs:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This script hasn't been graded yet. Grade it to see it annotated.",
+            )
+        run_id = runs[0][0]
+    results = [r for r in await repo.list_for_run(run_id, user.id) if r.session_id == session_id]
+    if not results:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grading run not found")
+    if grading_session.ocr_markdown is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="This script has no extracted text to annotate."
+        )
+    if grading_session.mime_type not in SUPPORTED_MIME_TYPES:
+        kind = "PDF" if grading_session.mime_type == "application/pdf" else grading_session.mime_type
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Annotated scripts can be made from JPEG, PNG and WebP photos, not {kind} yet.",
+        )
+
+    image = await get_backend(get_settings().STORAGE_BACKEND).load(grading_session.storage_key)
+    annotations = annotations_for_run(results, grading_session.ocr_markdown)
+    # Drawing a full-size photo takes a second or two: kept off the event loop
+    png, used = await run_in_threadpool(
+        render_annotated_script,
+        image,
+        grading_session.mime_type,
+        annotations,
+        style=style,
+        placement=placement,
+    )
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", PurePath(grading_session.original_filename).stem).strip("-.")
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={
+            PLACEMENT_HEADER: used,
+            "Content-Disposition": f'inline; filename="{stem or "script"}-annotated.png"',
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.patch("/results/{result_id}/verdict", response_model=QuestionResultOut)

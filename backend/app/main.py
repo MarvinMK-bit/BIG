@@ -23,6 +23,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Read by the frontend from the annotated script download
+    expose_headers=["Content-Disposition", "X-Annotation-Placement"],
 )
 
 @app.exception_handler(RequestValidationError)

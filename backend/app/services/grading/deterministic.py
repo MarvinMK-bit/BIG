@@ -68,6 +68,13 @@ def _worth(question: SchemeQuestion, procedure: Procedure, awards: list[MarkAwar
     return [mark.max_mark for mark in question.marks]
 
 
+def _source_line(parsed: ParsedAnswer, working_index: int | None) -> int | None:
+    """The OCR markdown line a procedure's working line index points at."""
+    if working_index is None or not 0 <= working_index < len(parsed.working_line_indices):
+        return None
+    return parsed.working_line_indices[working_index]
+
+
 def _grade_procedure(
     question: SchemeQuestion, parsed: ParsedAnswer
 ) -> tuple[Decimal, Decimal, str, list[MarkBreakdownItem]]:
@@ -97,6 +104,7 @@ def _grade_procedure(
             "awarded": float(award.awarded),
             "max_mark": float(worth),
             "reason": award.reason,
+            "line_index": _source_line(parsed, award.line_index),
         }
         for worth, award in pairs
     ]

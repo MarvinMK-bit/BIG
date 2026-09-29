@@ -28,3 +28,7 @@ python-docx==1.2.0
 
 # Algebraic equivalence for procedure marking
 sympy==1.14.0
+
+# Annotated script images: line detection and drawing
+pillow==12.3.0
+numpy==2.5.3

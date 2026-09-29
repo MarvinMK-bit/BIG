@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { filenameFrom, saveBlob } from "./save-blob";
+import { filenameFrom, saveBlob } from "@/lib/save-blob";
 
 // Fetched rather than linked, so a backend error (e.g. no questions found) shows here verbatim
 // instead of replacing the page with raw JSON.

@@ -116,6 +116,29 @@ def parse_arithmetic(text: str, allowed_letters: set[str]) -> sympy.Expr | None:
     return expr if isinstance(expr, sympy.Expr) else None
 
 
+def terms_of(text: str) -> list[str]:
+    """The terms of an expression as written, split at each + or - outside brackets, each
+    keeping its minus sign: "3x - 2(x + 1)" -> ["3x", "-2(x+1)"]."""
+    terms: list[str] = []
+    current = ""
+    depth = 0
+    previous = ""
+    for char in text:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if char in "+-" and depth == 0 and current.strip() and previous not in "*/^(":
+            terms.append(current)
+            current = "-" if char == "-" else ""
+        else:
+            current += char
+        if not char.isspace():
+            previous = char
+    terms.append(current)
+    return ["".join(term.split()) for term in terms if term.strip()]
+
+
 def rounding_tolerance(text: str) -> float:
     """How far a value may be from the exact one: decimals are accepted when correctly rounded
     to the places written."""

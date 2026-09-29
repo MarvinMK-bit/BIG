@@ -3,17 +3,20 @@ version: 0.1.0
 subject: mathematics
 source: manual
 description: >-
-  Algebra of three kinds, marked on the working rather than the final answer: collection
-  of like terms in a linear expression, quadratic equations, and simultaneous linear
-  equations in two unknowns. The scheme carries no fixed question and declares no marks.
-  It chooses the route from the student's working: two linear equations in the same two
-  unknowns on the first two lines are marked as simultaneous equations, a quadratic
-  equation on the first line as a quadratic, and a linear expression in one unknown as
-  collection of like terms. The procedure for that route supplies the marks, using BIG's
-  mark codes, and the first mark's reason names the route taken. Working that fits none
-  of the three earns no marks. Marking stops at the first incorrect step and nothing after
-  it is credited, not even a correct final answer. This is deliberately stricter than UNEB
-  follow-through marking.
+  Algebra of four kinds, marked on the working rather than the final answer: collection
+  of like terms in a linear expression, linear equations in one unknown, quadratic
+  equations, and simultaneous linear equations in two unknowns. The scheme carries no fixed
+  question and declares no marks. It chooses the route from the student's working: two
+  linear equations in the same two unknowns on the first two lines are marked as
+  simultaneous equations, a quadratic equation on the first line as a quadratic, a linear
+  equation in one unknown on the first line as a linear equation, and a linear expression
+  in one unknown as collection of like terms. The procedure for that route supplies the
+  marks, using BIG's mark codes, and the first mark's reason names the route taken. A lone
+  "x" between two numbers, as in "7 x 8", is read as a multiplication sign when nothing
+  else on the line is algebra, so working that is arithmetic throughout is outside the
+  scheme. Working that fits none of the four earns no marks. Marking stops at the first
+  incorrect step and nothing after it is credited, not even a correct final answer. This
+  is deliberately stricter than UNEB follow-through marking.
 questions:
   - number: "1"
     matcher: procedure

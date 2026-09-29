@@ -5,7 +5,7 @@ import { useId, useState } from "react";
 import { CopyButton } from "@/components/copy-button";
 import { muted } from "@/components/ui";
 import { apiRequest } from "@/lib/api-client";
-import { saveBlob } from "./save-blob";
+import { saveBlob } from "@/lib/save-blob";
 
 const field = "min-h-11 rounded border border-zinc-400 bg-transparent px-3 text-base";
 

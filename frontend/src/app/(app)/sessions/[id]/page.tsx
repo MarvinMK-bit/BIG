@@ -15,6 +15,7 @@ import type {
   RunView,
   Scheme,
 } from "@/lib/types";
+import { AnnotatedPanel } from "./annotated-panel";
 import { ExtractButton } from "./extract-button";
 import { ComparisonView } from "./comparison-view";
 import { GradePanel } from "./grade-panel";
@@ -126,6 +127,19 @@ export default async function SessionPage(props: PageProps<"/sessions/[id]">) {
         schemeRun={schemeRun}
         llmRun={llmRun}
       />
+
+      {newestFirst[0] &&
+        (session.mime_type === "application/pdf" ? (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-lg font-semibold">Annotated script</h2>
+            <p className="text-sm">
+              Annotated scripts can be made from photos (JPEG, PNG or WebP), not PDFs yet.
+            </p>
+          </section>
+        ) : (
+          // The newest run, as the backend would choose, pinned so a new run redraws it
+          <AnnotatedPanel sessionId={session.id} runId={newestFirst[0].grading_run_id} />
+        ))}
 
       {comparison && schemeRun && llmRun && me && (
         <section className="flex flex-col gap-3">

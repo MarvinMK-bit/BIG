@@ -466,8 +466,8 @@ def _conclusion_problem(line: str, system: _System) -> str | None:
     return None
 
 
-# A mark's (earned, reason)
-_Outcome = tuple[bool, str]
+# A mark's (earned, reason, the 1-based number of the line its reason names, if any)
+_Outcome = tuple[bool, str, int | None]
 
 
 @register
@@ -494,13 +494,18 @@ class SimultaneousProcedure(Procedure):
         lines = [line.strip() for line in working if line.strip()]
         outcomes = self._mark(lines, codes)
         return [
-            MarkAward(mark_id=mark.id, awarded=mark.max_mark if earned else Decimal(0), reason=reason)
-            for mark, (earned, reason) in zip(marks, outcomes)
+            MarkAward(
+                mark_id=mark.id,
+                awarded=mark.max_mark if earned else Decimal(0),
+                reason=reason,
+                line_index=None if line is None else line - 1,
+            )
+            for mark, (earned, reason, line) in zip(marks, outcomes)
         ]
 
     @staticmethod
     def _mark(lines: list[str], codes: list[str]) -> list[_Outcome]:
-        """Each mark's (earned, reason), in the scheme's order."""
+        """Each mark's (earned, reason, line), in the scheme's order."""
         outcomes: list[_Outcome | None] = [None] * len(codes)
         labels = [label or code for label, code in zip(mark_labels(codes), codes)]
         step_marks = [i for i, code in enumerate(codes) if code == STEP_CODE]
@@ -519,15 +524,15 @@ class SimultaneousProcedure(Procedure):
 
         def fill(code: str | None, outcome: _Outcome) -> None:
             for i in unfilled(code):
-                earned, reason = outcome
-                outcomes[i] = (earned, f"{reason} {surplus_note}" if i in surplus else reason)
+                earned, reason, line = outcome
+                outcomes[i] = (earned, f"{reason} {surplus_note}" if i in surplus else reason, line)
 
         def result() -> list[_Outcome]:
             assert all(outcome is not None for outcome in outcomes)
             return [outcome for outcome in outcomes if outcome is not None]
 
         if not lines:
-            fill(None, (False, "Not awarded: no working written."))
+            fill(None, (False, "Not awarded: no working written.", None))
             return result()
 
         def at(number: int) -> str:
@@ -539,19 +544,20 @@ class SimultaneousProcedure(Procedure):
             answer_lost = bool(unfilled(ANSWER_CODE))
             first = unfilled()[0]
             # The first mark still open is the one this line would have earned
-            outcomes[first] = (False, f"{at(number)} {why}. {STOP_NOTE}")
+            outcomes[first] = (False, f"{at(number)} {why}. {STOP_NOTE}", number)
             if first in surplus:
-                outcomes[first] = (False, f"{outcomes[first][1]} {surplus_note}")
+                outcomes[first] = (False, f"{outcomes[first][1]} {surplus_note}", number)
             later = f"Not awarded: marking stopped at line {number} '{lines[number - 1]}' ({why})."
-            fill(None, (False, f"{later} {STOP_NOTE}"))
+            fill(None, (False, f"{later} {STOP_NOTE}", number))
             # Lines 1 and 2 failing leave no system to check an answer against
             if answer_lost and number > 2 and later_answer_is_correct(number):
                 for i in [i for i, c in enumerate(codes) if c == ANSWER_CODE]:
-                    earned, reason = outcomes[i] or (False, "")
+                    earned, reason, line = outcomes[i] or (False, "", number)
                     outcomes[i] = (
                         earned,
                         f"{reason} A later line states the correct values, but a correct answer "
                         "reached through incorrect working earns nothing.",
+                        line,
                     )
             return result()
 
@@ -571,7 +577,7 @@ class SimultaneousProcedure(Procedure):
                 return stopped(1, str(error))
             fill(
                 None,
-                (False, f"Not awarded: {at(1)} is one equation; the system needs two, on lines 1 and 2."),
+                (False, f"Not awarded: {at(1)} is one equation; the system needs two, on lines 1 and 2.", 1),
             )
             return result()
         try:
@@ -587,11 +593,13 @@ class SimultaneousProcedure(Procedure):
                 f"Lines 1 and 2 '{lines[0]}', '{lines[1]}': system in {u} and {v} identified; "
                 f"line 1 {_describe_given(system.equations[0], system)}; "
                 f"line 2 {_describe_given(system.equations[1], system)}.",
+                # Lines 1 and 2 together earn it: the system is complete on line 2
+                2,
             ),
         )
 
         if len(lines) == 2:
-            fill(None, (False, "Not awarded: no working after the system on lines 1 and 2."))
+            fill(None, (False, "Not awarded: no working after the system on lines 1 and 2.", 2))
             return result()
 
         # Method lines, until the first line from line 4 on that states both values
@@ -618,7 +626,7 @@ class SimultaneousProcedure(Procedure):
             steps = unfilled(STEP_CODE)
             if steps:
                 done = _step_done(last, system, route, found)
-                outcomes[steps[0]] = (True, f"{at(number)}: correct {route} step, {done}.")
+                outcomes[steps[0]] = (True, f"{at(number)}: correct {route} step, {done}.", number)
             found |= set(last.values)
         assert last is not None and route is not None
 
@@ -629,8 +637,9 @@ class SimultaneousProcedure(Procedure):
                     False,
                     f"{surplus_note} It is awarded only with a correct answer, and {final} ends "
                     "the working without both values stated.",
+                    len(lines),
                 )
-            fill(STEP_CODE, (False, f"Not awarded: no further {route} step after {final}."))
+            fill(STEP_CODE, (False, f"Not awarded: no further {route} step after {final}.", len(lines)))
             problem = (
                 _answer_problem(last, system)
                 or "states both values on line 3, which begins the method; the answer comes after it"
@@ -641,11 +650,16 @@ class SimultaneousProcedure(Procedure):
                     False,
                     f"Not awarded: every step is correct, but no line states both values, e.g. "
                     f"'{u} = .., {v} = ..'. {final} {problem}.",
+                    len(lines),
                 ),
             )
             fill(
                 CONCLUSION_CODE,
-                (False, "Not awarded: a concluding statement counts only once both values are stated correctly."),
+                (
+                    False,
+                    "Not awarded: a concluding statement counts only once both values are stated correctly.",
+                    None,
+                ),
             )
             return result()
 
@@ -658,6 +672,7 @@ class SimultaneousProcedure(Procedure):
                 False,
                 f"Not awarded: {answer_at} states the answer, but no {labels[first]} step was shown "
                 "before it.",
+                answer_line,
             )
             fill(
                 None,
@@ -666,13 +681,16 @@ class SimultaneousProcedure(Procedure):
                     f"Not awarded: the {labels[first]} was not earned, and marks are earned in order, "
                     f"so none is awarded after it. {answer_at} states the values, but the working "
                     "skips a step.",
+                    answer_line,
                 ),
             )
             return result()
 
         for i in unfilled(STEP_CODE):
-            outcomes[i] = (True, f"{answer_at}: {surplus_note} It is awarded with the correct answer.")
-        fill(ANSWER_CODE, (True, f"{answer_at}: {system.answer()} stated, every step verified."))
+            outcomes[i] = (
+                True, f"{answer_at}: {surplus_note} It is awarded with the correct answer.", answer_line
+            )
+        fill(ANSWER_CODE, (True, f"{answer_at}: {system.answer()} stated, every step verified.", answer_line))
 
         if not unfilled(CONCLUSION_CODE):
             return result()
@@ -681,7 +699,7 @@ class SimultaneousProcedure(Procedure):
             line = lines[number - 1]
             problem = _conclusion_problem(line, system)
             if problem is None:
-                fill(CONCLUSION_CODE, (True, f"{at(number)}: concluding statement giving both values."))
+                fill(CONCLUSION_CODE, (True, f"{at(number)}: concluding statement giving both values.", number))
                 return result()
             if problem != _NO_CONCLUDING_WORD:
                 return stopped(number, problem)
@@ -696,6 +714,7 @@ class SimultaneousProcedure(Procedure):
                 False,
                 f"Not awarded: no concluding statement after the answer on line {answer_line}. "
                 f"It must give both values with a concluding word ({words}).",
+                answer_line,
             ),
         )
         return result()

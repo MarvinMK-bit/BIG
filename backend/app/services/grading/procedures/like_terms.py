@@ -62,6 +62,7 @@ from app.services.grading.procedures.common import (
     equal,
     parse_arithmetic,
     rounding_tolerance,
+    terms_of,
 )
 from app.services.grading.procedures.registry import register
 from app.services.grading.schemes import (
@@ -103,29 +104,6 @@ def _normalise(line: str) -> str:
     return " ".join(text.split()).rstrip(".").strip()
 
 
-def _terms(text: str) -> list[str]:
-    """The terms of an expression as written, split at each + or - outside brackets, each
-    keeping its minus sign: "3x - 2(x + 1)" -> ["3x", "-2(x+1)"]."""
-    terms: list[str] = []
-    current = ""
-    depth = 0
-    previous = ""
-    for char in text:
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth -= 1
-        if char in "+-" and depth == 0 and current.strip() and previous not in "*/^(":
-            terms.append(current)
-            current = "-" if char == "-" else ""
-        else:
-            current += char
-        if not char.isspace():
-            previous = char
-    terms.append(current)
-    return ["".join(term.split()) for term in terms if term.strip()]
-
-
 def _read_expression(line: str) -> tuple[_Expression, list[str]]:
     """The expression on line 1, and any steps written after it on the same line."""
     segments = [segment.strip() for segment in _normalise(line).split("=")]
@@ -151,7 +129,7 @@ def _read_expression(line: str) -> tuple[_Expression, list[str]]:
         raise _StepError(f"'{text}' is not a linear expression") from None
     if value.free_symbols - {variable} or degree > 1:
         raise _StepError(f"'{text}' is not a linear expression")
-    return _Expression(variable=variable, value=value, terms=_terms(text)), segments[1:]
+    return _Expression(variable=variable, value=value, terms=terms_of(text)), segments[1:]
 
 
 def _check_step(text: str, expression: _Expression) -> None:
@@ -179,7 +157,7 @@ def _collection_problem(text: str, expression: _Expression) -> str | None:
     )
     in_unknown = 0
     constants = 0
-    for term in _terms(text):
+    for term in terms_of(text):
         bare = term.lstrip("+-")
         if PLAIN_NUMBER_RE.match(bare):
             constants += 1
@@ -188,7 +166,7 @@ def _collection_problem(text: str, expression: _Expression) -> str | None:
         else:
             return f"leaves '{term}' uncollected"
         value = parse_arithmetic(bare, {expression.variable.name})
-        if value is not None and value.is_zero and len(_terms(text)) > 1:
+        if value is not None and value.is_zero and len(terms_of(text)) > 1:
             return f"keeps the zero term '{term}'"
     if in_unknown > 1:
         return f"has {in_unknown} terms in {expression.variable} still to collect"
@@ -219,8 +197,8 @@ def _conclusion_problem(line: str, expression: _Expression) -> str | None:
     return "does not give the simplified result"
 
 
-# A mark's (earned, reason)
-_Outcome = tuple[bool, str]
+# A mark's (earned, reason, the 1-based number of the line its reason names, if any)
+_Outcome = tuple[bool, str, int | None]
 
 
 @register
@@ -246,13 +224,18 @@ class LikeTermsProcedure(Procedure):
         lines = [line.strip() for line in working if line.strip()]
         outcomes = self._mark(lines, codes)
         return [
-            MarkAward(mark_id=mark.id, awarded=mark.max_mark if earned else Decimal(0), reason=reason)
-            for mark, (earned, reason) in zip(marks, outcomes)
+            MarkAward(
+                mark_id=mark.id,
+                awarded=mark.max_mark if earned else Decimal(0),
+                reason=reason,
+                line_index=None if line is None else line - 1,
+            )
+            for mark, (earned, reason, line) in zip(marks, outcomes)
         ]
 
     @staticmethod
     def _mark(lines: list[str], codes: list[str]) -> list[_Outcome]:
-        """Each mark's (earned, reason), in the scheme's order."""
+        """Each mark's (earned, reason, line), in the scheme's order."""
         outcomes: list[_Outcome | None] = [None] * len(codes)
 
         def unfilled(code: str | None = None) -> list[int]:
@@ -269,7 +252,7 @@ class LikeTermsProcedure(Procedure):
             return [outcome for outcome in outcomes if outcome is not None]
 
         if not lines:
-            fill(None, (False, "Not awarded: no working written."))
+            fill(None, (False, "Not awarded: no working written.", None))
             return result()
 
         def at(number: int) -> str:
@@ -285,17 +268,18 @@ class LikeTermsProcedure(Procedure):
             why = why.removeprefix(f"'{_normalise(lines[number - 1]).removeprefix('=').strip()}' ")
             answer_lost = bool(unfilled(ANSWER_CODE))
             # The first mark still open is the one this line would have earned
-            outcomes[unfilled()[0]] = (False, f"{at(number)} {why}. {STOP_NOTE}")
+            outcomes[unfilled()[0]] = (False, f"{at(number)} {why}. {STOP_NOTE}", number)
             later = f"Not awarded: marking stopped at line {number} '{lines[number - 1]}' ({why})."
-            fill(None, (False, f"{later} {STOP_NOTE}"))
+            fill(None, (False, f"{later} {STOP_NOTE}", number))
             # Line 1 failing leaves no expression to check an answer against
             if answer_lost and number > 1 and later_answer_is_correct(number):
                 for i in [i for i, c in enumerate(codes) if c == ANSWER_CODE]:
-                    earned, reason = outcomes[i] or (False, "")
+                    earned, reason, line = outcomes[i] or (False, "", number)
                     outcomes[i] = (
                         earned,
                         f"{reason} A later line states the simplified result, but a correct "
                         "answer reached through incorrect working earns nothing.",
+                        line,
                     )
             return result()
 
@@ -325,6 +309,7 @@ class LikeTermsProcedure(Procedure):
                 True,
                 f"{at(1)}: expression in {expression.variable} identified, "
                 f"terms {', '.join(expression.terms)}.",
+                1,
             ),
         )
 
@@ -354,6 +339,7 @@ class LikeTermsProcedure(Procedure):
                     False,
                     f"Not awarded: every step is correct, but no step states the result fully "
                     f"collected: {at(len(lines))} {last_problem}.",
+                    len(lines),
                 ),
             )
             fill(
@@ -362,6 +348,7 @@ class LikeTermsProcedure(Procedure):
                     False,
                     "Not awarded: a concluding statement counts only once the simplified result "
                     "is stated.",
+                    None,
                 ),
             )
             return result()
@@ -369,7 +356,7 @@ class LikeTermsProcedure(Procedure):
         answer_line, stated = answer
         fill(
             ANSWER_CODE,
-            (True, f"{at(answer_line)}: {stated} stated, fully collected, every step verified."),
+            (True, f"{at(answer_line)}: {stated} stated, fully collected, every step verified.", answer_line),
         )
 
         if not unfilled(CONCLUSION_CODE):
@@ -380,7 +367,7 @@ class LikeTermsProcedure(Procedure):
             if problem is None:
                 fill(
                     CONCLUSION_CODE,
-                    (True, f"{at(number)}: concluding statement giving the simplified result."),
+                    (True, f"{at(number)}: concluding statement giving the simplified result.", number),
                 )
                 return result()
             if problem != _NO_CONCLUDING_WORD:
@@ -397,6 +384,7 @@ class LikeTermsProcedure(Procedure):
                 False,
                 f"Not awarded: no concluding statement after the answer on line {answer_line}. "
                 f"It must give the simplified result with a concluding word ({words}).",
+                answer_line,
             ),
         )
         return result()

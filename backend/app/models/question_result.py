@@ -1,7 +1,7 @@
 import enum
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, NotRequired, TypedDict
 
 from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Index, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -26,6 +26,9 @@ class MarkBreakdownItem(TypedDict):
     awarded: float
     max_mark: float
     reason: str
+    # The OCR markdown line (index into its splitlines()) the reason names, for the annotated
+    # script. Set by the scheme grader's procedures; absent from LLM results and older rows.
+    line_index: NotRequired[int | None]
 
 
 class QuestionResult(Base):

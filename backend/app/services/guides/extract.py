@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 
 from app.services.grading.parser import (
@@ -28,10 +29,7 @@ def _expression_lines(markdown: str) -> list[ParsedAnswer]:
     ]
     expressions = [p for p in lines if "=" in p.raw_answer]
     kept = expressions or lines
-    return [
-        ParsedAnswer(number=str(i), sub_part=None, raw_answer=p.raw_answer, working=p.working)
-        for i, p in enumerate(kept, start=1)
-    ]
+    return [replace(p, number=str(i)) for i, p in enumerate(kept, start=1)]
 
 
 def extract_questions_from_guide(markdown: str) -> list[GuideRow]:

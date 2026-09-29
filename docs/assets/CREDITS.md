@@ -1,8 +1,9 @@
-# Image credits
+# Image and font credits
 
-Every image used in BIG's documentation and web interface is listed here with its
-author, source and licence. Attribution is a condition of the licences below, not a
-courtesy — if you add an image, add its entry here at the same time.
+Every image used in BIG's documentation and web interface, and every font BIG bundles,
+is listed here with its author, source and licence. Attribution is a condition of the
+licences below, not a courtesy — if you add an image or a font, add its entry here at
+the same time.
 
 Note that BIG's own name and logo are **not** covered by the Apache-2.0 licence or by
 any licence below. See `NOTICE`.
@@ -23,6 +24,26 @@ IBM's Deep Blue — the RS/6000 SP cabinet on display at the Computer History Mu
 Required attribution line, to appear wherever the image is displayed:
 
 > Deep Blue by James the photographer, via Wikimedia Commons, [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/)
+
+---
+
+## DejaVu Sans (font)
+
+`backend/app/services/annotate/fonts/DejaVuSans.ttf` and `DejaVuSans-Bold.ttf`, the
+typeface of the marks, scores and footer drawn on annotated scripts. Bundled so every
+deployment draws them the same way, whatever fonts its system has.
+
+| | |
+|---|---|
+| **Author** | Bitstream, Inc. (Bitstream Vera); the DejaVu fonts team; Tavmjong Bah (Arev glyphs) |
+| **Version** | 2.37 |
+| **Source** | [dejavu-fonts.github.io](https://dejavu-fonts.github.io/) |
+| **Licence** | [Bitstream Vera Fonts licence](https://dejavu-fonts.github.io/License.html), with the Arev Fonts licence for glyphs taken from Arev; DejaVu's own changes are in the public domain. Permits redistribution, including commercial use, as part of a larger work. |
+| **Modifications** | None |
+
+The licence text travels with the fonts in `backend/app/services/annotate/fonts/LICENSE`,
+as the licence requires. It forbids selling the fonts on their own and requires any modified
+version to be renamed; neither applies to BIG's use.
 
 ---
 

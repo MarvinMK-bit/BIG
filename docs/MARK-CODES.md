@@ -59,7 +59,7 @@ questions:
 ```
 
 A procedure given no marks awards its `default_marks()`: for quadratic, simultaneous and
-like-terms, the same marks as their `-any` schemes. The algebra procedure has no default marks;
+like-terms, the same marks as their `-any` schemes, and for linear-eq `T`, `M`, `A` and `D`. The algebra procedure has no default marks;
 it passes the empty list to whichever of them it routes to, so its total depends on the working.
 The grader takes the question's codes from the marks the procedure returns, and its `max_mark`
 from their count. An aligned LLM run is not given codes for such a question: it marks it
@@ -175,11 +175,33 @@ between the expression and its result to reward, so the like-terms procedure tak
 The full rules are in the docstring of
 `backend/app/services/grading/procedures/like_terms.py`.
 
+A linear equation in one unknown, such as `2x + 3 = 11`, is marked by the linear-eq procedure
+with `T`, one to four `M`, `A` and `D`. It awards:
+
+- `T` for line 1, when it is a linear equation in one unknown with exactly one solution, its
+  coefficients read by collecting it to the form `ax = c`;
+- each `M` for the next line that rearranges the equation, keeping its solution, e.g.
+  `2x = 8`. Arithmetic on its own, or line 1's equation written again, is correct but earns
+  nothing. An `M` beyond the first that no line earned is awarded with a correct answer, as for
+  quadratics; the answer stated with no rearrangement before it loses the first `M`, and by the
+  prefix rule everything after it;
+- `A` for the first line reading `x = value` with the value a plain number equal to the
+  solution: `x = 4`, not `x = 8/2`;
+- `D` for a line after the answer that contains the value and a concluding word.
+
+The full rules are in the docstring of
+`backend/app/services/grading/procedures/linear_eq.py`.
+
 The algebra procedure marks nothing itself. It routes the working to simultaneous (two linear
 equations in the same two unknowns on lines 1 and 2), quadratic (a quadratic equation on line
-1) or like-terms (a linear expression on line 1), in that order, and returns that procedure's
-marks, naming the route in the first mark's reason. `algebra-any` uses it with no marks
-declared. Working that fits none of the three earns zero on every mark, with the reason "this
-working does not match any question type the algebra scheme covers". With no marks declared,
-that is a single `T`. The rules are in the docstring of
-`backend/app/services/grading/procedures/algebra.py`.
+1), linear-eq (a linear equation in one unknown on line 1) or like-terms (a linear expression
+on line 1), in that order, and returns that procedure's marks, naming the route in the first
+mark's reason. An equation is checked before an expression, since a linear equation contains
+one, but a line that reads as an expression and an attempt to simplify it, such as
+`3x + 3x = 5x`, still goes to like-terms. A lone `x` between two numbers, as in `7 x 8`, is read
+as a multiplication sign when nothing else on the line is algebra. `algebra-any` uses the
+algebra procedure with no marks declared. Working that fits none of the four earns zero on
+every mark, with the reason "this working does not match any question type the algebra scheme
+covers"; working that is arithmetic throughout gets the reason "this working is arithmetic,
+with no unknown on any line". With no marks declared, that is a single `T`. The rules are in
+the docstring of `backend/app/services/grading/procedures/algebra.py`.

@@ -432,8 +432,8 @@ def _conclusion_problem(line: str, equation: _Equation) -> str | None:
     return None
 
 
-# A mark's (earned, reason)
-_Outcome = tuple[bool, str]
+# A mark's (earned, reason, the 1-based number of the line its reason names, if any)
+_Outcome = tuple[bool, str, int | None]
 
 
 @register
@@ -458,13 +458,18 @@ class QuadraticProcedure(Procedure):
         lines = [line.strip() for line in working if line.strip()]
         outcomes = self._mark(lines, codes)
         return [
-            MarkAward(mark_id=mark.id, awarded=mark.max_mark if earned else Decimal(0), reason=reason)
-            for mark, (earned, reason) in zip(marks, outcomes)
+            MarkAward(
+                mark_id=mark.id,
+                awarded=mark.max_mark if earned else Decimal(0),
+                reason=reason,
+                line_index=None if line is None else line - 1,
+            )
+            for mark, (earned, reason, line) in zip(marks, outcomes)
         ]
 
     @staticmethod
     def _mark(lines: list[str], codes: list[str]) -> list[_Outcome]:
-        """Each mark's (earned, reason), in the scheme's order."""
+        """Each mark's (earned, reason, line), in the scheme's order."""
         outcomes: list[_Outcome | None] = [None] * len(codes)
         step_marks = [i for i, code in enumerate(codes) if code == STEP_CODE]
         # M marks beyond the step this question type needs
@@ -482,15 +487,15 @@ class QuadraticProcedure(Procedure):
 
         def fill(code: str | None, outcome: _Outcome) -> None:
             for i in unfilled(code):
-                earned, reason = outcome
-                outcomes[i] = (earned, f"{reason} {surplus_note}" if i in surplus else reason)
+                earned, reason, line = outcome
+                outcomes[i] = (earned, f"{reason} {surplus_note}" if i in surplus else reason, line)
 
         def result() -> list[_Outcome]:
             assert all(outcome is not None for outcome in outcomes)
             return [outcome for outcome in outcomes if outcome is not None]
 
         if not lines:
-            fill(None, (False, "Not awarded: no working written."))
+            fill(None, (False, "Not awarded: no working written.", None))
             return result()
 
         def at(number: int) -> str:
@@ -502,19 +507,20 @@ class QuadraticProcedure(Procedure):
             answer_lost = bool(unfilled(ANSWER_CODE))
             remaining = unfilled()
             # The first mark still open is the one this line would have earned
-            outcomes[remaining[0]] = (False, f"{at(number)} {why}. {STOP_NOTE}")
+            outcomes[remaining[0]] = (False, f"{at(number)} {why}. {STOP_NOTE}", number)
             if remaining[0] in surplus:
-                outcomes[remaining[0]] = (False, f"{outcomes[remaining[0]][1]} {surplus_note}")
+                outcomes[remaining[0]] = (False, f"{outcomes[remaining[0]][1]} {surplus_note}", number)
             later = f"Not awarded: marking stopped at line {number} '{lines[number - 1]}' ({why})."
-            fill(None, (False, f"{later} {STOP_NOTE}"))
+            fill(None, (False, f"{later} {STOP_NOTE}", number))
             # Line 1 failing leaves no equation to check an answer against
             if answer_lost and number > 1 and later_answer_is_correct(number):
                 for i in [i for i, c in enumerate(codes) if c == ANSWER_CODE]:
-                    earned, reason = outcomes[i] or (False, "")
+                    earned, reason, line = outcomes[i] or (False, "", number)
                     outcomes[i] = (
                         earned,
                         f"{reason} A later line states the correct roots, but a correct answer "
                         "reached through incorrect working earns nothing.",
+                        line,
                     )
             return result()
 
@@ -537,11 +543,12 @@ class QuadraticProcedure(Procedure):
                 True,
                 f"{at(1)}: equation in {equation.variable} identified, "
                 f"a = {show(equation.a)}, b = {show(equation.b)}, c = {show(equation.c)}.",
+                1,
             ),
         )
 
         if len(lines) == 1:
-            fill(None, (False, "Not awarded: no working after the equation on line 1."))
+            fill(None, (False, "Not awarded: no working after the equation on line 1.", 1))
             return result()
 
         # Method lines, until the first line from line 3 on that states every root
@@ -568,7 +575,7 @@ class QuadraticProcedure(Procedure):
                 break
             steps = unfilled(STEP_CODE)
             if steps:
-                outcomes[steps[0]] = (True, f"{at(number)}: correct {route} step.")
+                outcomes[steps[0]] = (True, f"{at(number)}: correct {route} step.", number)
 
         assert last is not None
         if answer_line is None:
@@ -578,14 +585,19 @@ class QuadraticProcedure(Procedure):
                     False,
                     f"{surplus_note} It is awarded only with a correct answer, and {final} ends "
                     "the working without the roots stated.",
+                    len(lines),
                 )
             problem = _answer_problem(last, equation) or "does not state the roots on a line after line 2"
-            fill(ANSWER_CODE, (False, f"Not awarded: every step is correct, but {final} {problem}."))
+            fill(
+                ANSWER_CODE,
+                (False, f"Not awarded: every step is correct, but {final} {problem}.", len(lines)),
+            )
             fill(
                 CONCLUSION_CODE,
                 (
                     False,
                     "Not awarded: a concluding statement counts only once the roots are stated correctly.",
+                    None,
                 ),
             )
             return result()
@@ -593,12 +605,14 @@ class QuadraticProcedure(Procedure):
         answer_at = at(answer_line)
         # Line 2 always earns the first M, so any still open is one the question doesn't need
         for i in unfilled(STEP_CODE):
-            outcomes[i] = (True, f"{answer_at}: {surplus_note} It is awarded with the correct answer.")
+            outcomes[i] = (
+                True, f"{answer_at}: {surplus_note} It is awarded with the correct answer.", answer_line
+            )
         if last.no_real_roots:
-            fill(ANSWER_CODE, (True, f"{answer_at}: correctly states there are no real roots."))
+            fill(ANSWER_CODE, (True, f"{answer_at}: correctly states there are no real roots.", answer_line))
         else:
             stated = ", ".join(f"{equation.variable} = {show(root)}" for root in equation.roots)
-            fill(ANSWER_CODE, (True, f"{answer_at}: roots {stated} stated, every step verified."))
+            fill(ANSWER_CODE, (True, f"{answer_at}: roots {stated} stated, every step verified.", answer_line))
 
         if not unfilled(CONCLUSION_CODE):
             return result()
@@ -608,7 +622,7 @@ class QuadraticProcedure(Procedure):
             problem = _conclusion_problem(line, equation)
             if problem is None:
                 gives = "that there are no real roots" if last.no_real_roots else "the roots"
-                fill(CONCLUSION_CODE, (True, f"{at(number)}: concluding statement giving {gives}."))
+                fill(CONCLUSION_CODE, (True, f"{at(number)}: concluding statement giving {gives}.", number))
                 return result()
             if problem != _NO_CONCLUDING_WORD:
                 return stopped(number, problem)
@@ -623,6 +637,7 @@ class QuadraticProcedure(Procedure):
                 False,
                 f"Not awarded: no concluding statement after the answer on line {answer_line}. "
                 f"It must give the roots with a concluding word ({words}).",
+                answer_line,
             ),
         )
         return result()

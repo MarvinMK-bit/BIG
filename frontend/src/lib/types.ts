@@ -162,6 +162,8 @@ export type MarkBreakdownItem = {
   awarded: number;
   max_mark: number;
   reason: string;
+  // The OCR text line (0-based) the reason names; absent for LLM results and older runs
+  line_index?: number | null;
 };
 
 export type GradingRun = {

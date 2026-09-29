@@ -38,6 +38,8 @@ class MarkBreakdownOut(BaseModel):
     awarded: float
     max_mark: float
     reason: str
+    # The OCR markdown line the reason names; None for LLM results and older runs
+    line_index: int | None = None
 
 
 class QuestionResultOut(BaseModel):
