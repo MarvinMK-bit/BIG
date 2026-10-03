@@ -248,16 +248,58 @@ carry per-token confidence for the grader to use.
    └─────────────────────┘          └───────────────────────────┘
 ```
 
-### 3.4 Scope of the first deterministic grader
+### 3.4 Procedures: marking working, not answers
 
-Start narrow and provable: **arithmetic**. Test it against OCR output from both `.docx`
-inputs and photographed scripts. Expand to algebraic manipulation, then to the structured
-parts of physics, before touching anything resembling free text.
+A mark scheme that only checks final answers is an answer key. It cannot tell a student who
+reasoned correctly and slipped at the last line from one who guessed.
 
-The reason for starting this small is that the first mark scheme has to demonstrate the
-measurement machinery works — that a deterministic result can be compared to an LLM result
-on the same question and shown to be equal or better. That demonstration matters more than
-coverage.
+So a scheme question may name a **procedure** instead of an expected answer. A procedure is
+reviewed code in this repository that reads the student's own working and verifies it step
+by step. The YAML names the procedure; the procedure does the mathematics. Schemes stay
+declarative and safe to accept from strangers, while real marking logic lives in code that
+is reviewed like any other.
+
+This changes what a scheme is. `quadratic-any` carries no answers: it reads the equation off
+the student's paper, extracts the coefficients, and checks their factorisation or their use
+of the formula. One scheme marks every quadratic.
+
+**Marking stops at the first wrong step.** Once a line is wrong, nothing after it can be
+verified against the question — only against the student's own error. BIG awards nothing
+beyond that point, including working that follows correctly from the mistake. This is
+stricter than follow-through marking, and procedures say so in their reasons.
+
+That rule has a useful consequence: a valid result is always a run of earned marks followed
+by a run of unearned ones. A pattern like earned, unearned, earned is impossible, and a
+grader producing one has malfunctioned. The whole result therefore collapses to a single
+number — **how far the student got before the first error** — which is what makes two
+graders directly comparable.
+
+**Coverage grows one procedure at a time.** The first four cover collection of like terms,
+linear equations in one unknown, quadratic equations, and simultaneous linear equations in
+two unknowns, with a dispatching procedure that chooses the route from the student's own
+working rather than requiring the teacher to know in advance.
+
+Deliberately out of scope for now: anything requiring a diagram, geometric reasoning, or
+free-text explanation. Those are where the model path earns its place, and the thesis does
+not require deterministic coverage of everything.
+
+### 3.4.1 Mark codes
+
+Marks are awarded against named points rather than as a single score per question:
+
+| Code | Meaning |
+|---|---|
+| **T** | A correct first step. Exactly one per question, always first. |
+| **M** | A subsequent correct step. One to four per question. |
+| **A** | The answer stated. |
+| **D** | A concluding statement, checked by pattern rather than by a model. |
+
+The number after a code is the award, not part of its name: `T - 1` where earned, `T - 0`
+where not. A question worth four marks with two earned shows `T - 1  M - 1  A - 0  D - 0`,
+which is both the mark and the diagnosis.
+
+These are BIG's own codes, designed to mirror how method marking works in practice. They can
+be displayed as ticks and crosses instead, for readers outside that convention.
 
 ### 3.5 Data ownership and visibility
 
@@ -330,10 +372,6 @@ of questions with their maximum marks and expected answers. Matching is declared
 programmed — `exact`, `numeric`, and similar matcher names — so the vocabulary of what a
 scheme can express grows deliberately rather than by contributors writing arbitrary logic.
 
-Questions marked on their working rather than their answer name a procedure and award their
-marks under BIG's own mark codes — `T`, `M`, `A`, `D` — described in
-[MARK-CODES.md](MARK-CODES.md).
-
 **Schemes can be generated from marking guides.** Teachers already write marking guides for
 every set exam. Requiring them to re-express that work as YAML is a needless barrier, so BIG
 accepts a marking guide and produces a draft scheme from it.
@@ -381,14 +419,28 @@ than merely plausible.
 
 | Contribution | Reward floor |
 |---|---|
-| Useful feedback on a grading result (upvoted) | 100 sats |
-| A new mark scheme, or a material improvement to one | 500 sats |
+| Useful feedback on a grading result or a scheme | 100 sats |
+| A well-designed mark scheme, or a material improvement to one | 500 sats |
 
-Feedback is public, threaded like a discussion, and moderated. Spam and bad-faith
-contributions are downvoted, and repeat offenders can be muted or blocked.
+Feedback is public, threaded one level deep, and moderated. Each item carries a stable
+public reference — `0010a`, and `0010b` for a reply — so a scheme can be traced to the
+observation that prompted it. Spam and bad-faith contributions are rejected or muted, and
+an account can be blocked without removing what it has already contributed.
 
-Payouts run over the Blink API. Contributors register a Blink wallet address against their
-account.
+**"Well-designed" is a judgement, not a rule.** A scheme that marks any quadratic equation
+clearly qualifies; an answer key for one past paper clearly does not. Much of the ground
+between is for an administrator to weigh, and saying so openly is better than implying a
+precision the criterion does not have.
+
+**Performance reports are not rewarded.** Sats go to schemes and to feedback, which are
+where the durable value sits. Whether validation work should also earn is left open —
+see 4.4.
+
+Rewards are recorded in a ledger before any payment is attempted, and each reward is tied to
+the contribution that earned it, so a reward cannot be created twice for the same item.
+Payouts run over the Blink API to a Lightning address the contributor saves against their
+account. Payment is always a deliberate act by an administrator against a single reward —
+there is no batch payout, and no payment is triggered automatically by approval.
 
 ### 4.3 Open design questions
 
@@ -397,10 +449,39 @@ These are deliberately unresolved and are good places for contributors to weigh 
 - **Reward calibration.** Fixed floors are simple but crude. Should a scheme that measurably
   improves accuracy across many scripts earn more than one that does not?
 - **Gaming resistance.** Any reward system attracts people optimising for the reward rather
-  than the goal. Admin upvoting is the initial defence; it will not scale.
-- **Thread depth.** One reply level to a top-level feedback comment is the conservative
-  option if hosting constraints bite; deeper threading is preferred otherwise.
-- **Payout timing.** Immediate on upvote, or batched?
+  than the goal. Administrator review is the initial defence; it will not scale.
+- **Rewarding validation.** Testing a scheme across forty scripts and reporting honestly is
+  real work, and it is what makes a scheme's claims contestable. It is also the easiest
+  thing to fabricate, since nobody else sees the scripts. Reports currently earn nothing.
+  Whether they should — and under what verification — is open.
+- **Scheme contribution route.** Schemes uploaded to a hosted instance live in that
+  instance's database and reach the repository only when an administrator exports and
+  commits them. The intended end state is that an upload opens a pull request, so review
+  happens in public and a payout maps to a merged commit with a named author.
+
+### 4.4 Performance reports: an open town square
+
+A scheme's quality is a claim about how it marked real scripts. Those scripts are private —
+often student work that cannot be shared — so BIG cannot verify the claim centrally.
+
+It does not try to. Instead, anyone may publish a **performance report** against a scheme
+version: how many scripts and questions were tested, how many decisions were correct, the
+paper type and level, who tested it and in what capacity, and how verdicts were decided.
+Reports carry no student data, and the format has no field for any.
+
+Anyone may then publish a **conflicting report** disputing another. Disputes stand alongside
+what they dispute; nothing adjudicates between them. The mechanism is not trust but
+replication — a claim that cannot be reproduced is visible as a claim that was contested.
+
+Three deliberate choices:
+
+- **A scheme's author may report on their own scheme**, marked as a self-report, because
+  their testing is still evidence and hiding its origin would be worse than labelling it.
+- **Accuracy is derived, never stored** — from the raw counts, so it cannot be misreported
+  independently of them. Arithmetically impossible claims are rejected outright, which is
+  the only verification available without the scripts.
+- **Nothing is resolved by authority.** Whether a community eventually adopts a way of
+  settling disputes is for that community to decide.
 
 ---
 
@@ -468,8 +549,22 @@ building it this way.
 
 ## 7. Status
 
-This document describes intent, not implementation. Nothing in section 3 is built yet.
-It is published at the start of the project so that the reasoning is on the record and can
-be argued with.
+This document was published before the system existed, so that the reasoning was on the
+record and could be argued with. Most of what it describes is now built.
+
+**Working:** upload and OCR of handwritten scripts; both grading paths writing per-question
+results into one shared table; procedures marking working across four algebra question
+types; the T/M/A/D mark codes and the stop-at-first-error rule; question papers so the model
+marks against what was actually asked; per-question comparison, human verdicts and accuracy
+over time; uploadable schemes with review, feedback, performance reports and disputes; a
+rewards ledger with Lightning payouts; annotated scripts and printable Masks of Marks. The
+instance is deployed, and access is granted by request rather than open registration.
+
+**Not built:** schemes reaching the repository as pull requests rather than by export;
+procedures beyond algebra; any notification outside the application itself.
+
+**Not established:** anything about accuracy. The measurement machinery exists and has
+almost nothing in it. Until many scripts have been graded and judged, BIG demonstrates a
+mechanism, not a result — and section 6 remains an open question rather than a settled one.
 
 Contributions, objections, and corrections are welcome. See `CONTRIBUTING.md`.
