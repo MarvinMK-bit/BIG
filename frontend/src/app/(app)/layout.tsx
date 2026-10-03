@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { backendGet } from "@/lib/backend";
-import type { Feedback, Me, PendingScheme } from "@/lib/types";
+import type { AccessRequest, Feedback, Me, PendingScheme } from "@/lib/types";
 import { LogoutButton } from "./logout-button";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await backendGet<Me>("/auth/me");
-  // Everything awaiting an admin on /moderation: feedback and contributed schemes
+  // Everything awaiting an admin on /moderation: access requests, feedback and contributed schemes
   const pendingCount = user.is_admin
     ? (
         await Promise.all([
+          backendGet<AccessRequest[]>("/access-requests").then((all) =>
+            all.filter((r) => r.status === "pending"),
+          ),
           backendGet<Feedback[]>("/feedback/pending"),
           backendGet<PendingScheme[]>("/grading/schemes/pending"),
         ])
@@ -51,6 +54,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                     {pendingCount}
                   </span>
                 )}
+              </Link>
+            )}
+            {user.is_admin && (
+              <Link href="/users" className="underline">
+                Users
               </Link>
             )}
           </nav>

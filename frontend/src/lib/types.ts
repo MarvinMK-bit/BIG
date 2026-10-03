@@ -266,6 +266,33 @@ export type VerdictHistory = {
 
 export type Me = { id: string; username: string; is_admin: boolean; blink_address: string | null };
 
+export type AccessRequestStatus = "pending" | "approved" | "declined";
+
+// Someone asking for an account; approving it creates the user. Admin only.
+export type AccessRequest = {
+  id: string;
+  username: string;
+  email: string | null;
+  phone: string | null;
+  display_name: string | null;
+  about: string;
+  status: AccessRequestStatus;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+};
+
+// A user as listed on /users. Admin only.
+export type AdminUser = {
+  id: string;
+  username: string;
+  email: string | null;
+  display_name: string | null;
+  is_admin: boolean;
+  is_active: boolean;
+  created_at: string;
+};
+
 export type FeedbackStatus = "pending" | "approved" | "rejected" | "muted";
 
 // What a feedback thread hangs off: one question result, or one mark scheme.

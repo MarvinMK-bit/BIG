@@ -40,6 +40,16 @@ class UserRepository:
         await self.session.flush()
         return user
 
+    async def list_all(self) -> list[User]:
+        """Every user, newest first. For admins only."""
+        result = await self.session.execute(select(User).order_by(User.created_at.desc()))
+        return list(result.scalars().all())
+
+    async def set_active(self, user: User, is_active: bool) -> User:
+        user.is_active = is_active
+        await self.session.flush()
+        return user
+
     async def set_blink_address(self, user: User, address: str | None) -> User:
         user.blink_address = address
         await self.session.flush()

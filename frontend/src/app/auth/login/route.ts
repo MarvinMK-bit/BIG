@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { API_BASE, TOKEN_COOKIE } from "@/lib/config";
+import { isWaking, WAKING_MESSAGE } from "@/lib/waking";
 
 // Seconds until the JWT's `exp`, so the cookie lives exactly as long as the token.
 function tokenMaxAge(jwt: string): number | undefined {
@@ -35,7 +36,10 @@ export async function POST(request: Request) {
   try {
     upstream = await fetch(`${API_BASE}/auth/login`, { method: "POST", body, cache: "no-store" });
   } catch {
-    return Response.json({ detail: "Backend unavailable" }, { status: 502 });
+    return Response.json({ detail: WAKING_MESSAGE }, { status: 502 });
+  }
+  if (isWaking(upstream.status)) {
+    return Response.json({ detail: WAKING_MESSAGE }, { status: upstream.status });
   }
 
   const data = await upstream.json().catch(() => null);

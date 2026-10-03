@@ -61,3 +61,21 @@ class UserUpdate(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class AdminUserOut(BaseModel):
+    """A user as listed for admins: enough to recognise and block them, nothing payment-related."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    username: str
+    email: str | None
+    display_name: str | None
+    is_admin: bool
+    is_active: bool
+    created_at: datetime
+
+
+class UserActiveUpdate(BaseModel):
+    is_active: bool

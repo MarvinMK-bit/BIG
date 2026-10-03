@@ -35,8 +35,13 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
 
+    # 401 rather than 403, so a blocked user's existing session ends and they land on sign-in
     if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account has been blocked.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     return user
 

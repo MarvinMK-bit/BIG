@@ -3,8 +3,15 @@ import type { NextRequest } from "next/server";
 
 const TOKEN_COOKIE = "big_token";
 
-// Reachable without a session. The login page needs the config to decide whether to show sign-up.
-const PUBLIC_EXACT = new Set(["/", "/login", "/api/auth/config"]);
+// Reachable without a session. The login page needs the config to decide whether to show sign-up;
+// the access request form posts to the backend through the /api proxy.
+const PUBLIC_EXACT = new Set([
+  "/",
+  "/login",
+  "/request-access",
+  "/api/auth/config",
+  "/api/auth/request-access",
+]);
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { muted } from "@/components/ui";
+import { isWaking, WAKING_MESSAGE } from "@/lib/waking";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,9 +35,10 @@ export default function LoginPage() {
         return;
       }
       const body = await res.json().catch(() => null);
-      setError(typeof body?.detail === "string" ? body.detail : "Login failed");
+      if (isWaking(res.status)) setError(WAKING_MESSAGE);
+      else setError(typeof body?.detail === "string" ? body.detail : "Login failed");
     } catch {
-      setError("Could not reach the server");
+      setError(WAKING_MESSAGE);
     }
     setPending(false);
   }
@@ -76,6 +79,15 @@ export default function LoginPage() {
           {pending ? "Signing in…" : "Sign in"}
         </button>
       </form>
+      <p className={`text-xs ${muted}`}>
+        This instance sleeps when idle, so the first visit after a quiet period may take a moment.
+      </p>
+      <p className="text-sm">
+        Need access?{" "}
+        <Link href="/request-access" className="underline">
+          Request an account.
+        </Link>
+      </p>
       {registrationOpen && (
         <p className="text-sm">
           No account?{" "}

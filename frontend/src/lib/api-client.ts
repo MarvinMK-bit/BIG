@@ -7,7 +7,11 @@ function detailMessage(body: unknown, status: number): string {
   const detail = (body as { detail?: unknown } | null)?.detail;
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
-    const msgs = detail.map((d) => (d as { msg?: unknown })?.msg).filter((m) => typeof m === "string");
+    const msgs = detail
+      .map((d) => (d as { msg?: unknown })?.msg)
+      .filter((m): m is string => typeof m === "string")
+      // Pydantic prefixes messages raised by a validator; the rest of the message is for the user
+      .map((m) => m.replace(/^Value error, /, ""));
     if (msgs.length) return msgs.join("; ");
   }
   if (status === 413) return "File is too large";
