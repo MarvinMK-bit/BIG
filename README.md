@@ -55,21 +55,34 @@ marking to respond *better* — but that's the hypothesis this project exists to
 
 ## How BIG works
 
-Scripts are graded two ways, writing into the same table.
+A script is photographed, read by OCR into Markdown, then graded two ways — writing results
+into the same table so the two can be compared question by question.
 
-| | **Path A — LLM grader** | **Path B — Mark scheme** |
+| | **LLM grader** | **Mark scheme** |
 |---|---|---|
 | How it grades | Sends the script to a model | Runs versioned deterministic rules |
 | Marginal cost | Tokens, per script | Zero |
 | Auditable | No | Yes — read the rule |
 | Coverage today | Broad | Narrow, growing |
 
-Identical per-question results make the two directly comparable: you can see exactly where
-deterministic grading has caught up with the model, and where it hasn't.
+**Schemes mark working, not just answers.** A scheme can name a *procedure* — code in this
+repository — that reads a student's own first line, extracts the problem, and verifies each
+subsequent step. Marking stops at the first wrong step, as a human marker would stop
+trusting the rest. Current procedures cover collection of like terms, linear equations,
+quadratic equations, and simultaneous equations in two unknowns, with a dispatcher that
+chooses the route from the student's working.
 
-OCR stays a model for now, behind a swappable interface — image in, structured Markdown out.
-Everything downstream runs on machine-readable text, which is why the grader can be
-deterministic.
+**Marks are awarded per step**, using four codes: **T** a correct first step, **M** a
+subsequent step, **A** the answer, **D** a concluding statement. Each is displayed as
+`T - 1` when earned or `T - 0` when not.
+
+**Results come back on paper.** BIG renders the marked script, and a *Mask of Marks* — the
+same annotations on white — so the student's original paper can be fed back through a
+printer and keep their own handwriting, with only the marks added.
+
+OCR stays a model for now, behind a swappable interface. Everything downstream runs on
+machine-readable text, which is why the grader can be deterministic. Line positions for
+annotation are found by image analysis, not by a model.
 
 ## Where the bitcoin comes in
 
@@ -80,11 +93,13 @@ So BIG pays them, in sats, over Lightning.
 
 | Contribution | Reward floor |
 |---|---|
-| Useful feedback on a grading result | 100 sats |
-| A new mark scheme, or a material improvement | 500 sats |
+| Useful feedback on a grading result or a scheme | 100 sats |
+| A well-designed mark scheme, or a material improvement | 500 sats |
 
-Mark schemes are files in this repo, reviewed through pull requests. A payout maps to a
-merged commit with a named author.
+Schemes are public, readable as YAML, and reviewed before entering the repository. Feedback
+is threaded and moderated. Anyone may publish a **performance report** claiming how a scheme
+performed on their own scripts — and anyone may publish a conflicting report disputing it.
+Reports carry no student data; disputes stand alongside what they dispute.
 
 ## What would prove this wrong
 
@@ -94,12 +109,25 @@ is measurable — that's the point of building it this way.
 
 ## Status
 
-**Design stage. Nothing is built yet.**
+**Working, early, and not yet proven.** The pipeline runs end to end: upload, OCR, both
+grading paths, per-question comparison, human verdicts, accuracy over time, annotated
+scripts and printable masks. Schemes can be uploaded, reviewed and exported. Rewards are
+recorded and paid over Lightning.
 
-The [architecture document](docs/ARCHITECTURE.md) has the data model, the full rationale, and
-the open design questions. Objections welcome — especially from teachers. Spotting where a
-grader marks wrongly is the input this whole system runs on. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
+What it does **not** yet have is evidence. Accuracy figures mean nothing until many scripts
+have been graded and judged, and that work is only beginning.
+
+The hosted instance is invite-only, because it handles student work. The code is open source
+— run your own.
+
+## Contributing
+
+The most valuable contribution here is knowing where a grader marks wrongly. That's subject
+expertise, not programming.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), the [architecture
+document](docs/ARCHITECTURE.md) for the full reasoning and data model, and
+[docs/MARK-CODES.md](docs/MARK-CODES.md) for how marks are awarded.
 
 ## Licence
 
